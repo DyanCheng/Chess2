@@ -1,0 +1,1 @@
+//# sourceMappingURL=chess-rule.service.js.map
