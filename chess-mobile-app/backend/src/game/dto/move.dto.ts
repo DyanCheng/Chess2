@@ -3,10 +3,6 @@ import { IsString, IsNotEmpty, IsOptional } from 'class-validator';
 export class MoveDto {
   @IsString()
   @IsNotEmpty()
-  gameId: string;
-
-  @IsString()
-  @IsNotEmpty()
   playerId: string;
 
   @IsString()
@@ -15,9 +11,9 @@ export class MoveDto {
 
   @IsString()
   @IsNotEmpty()
-  to: string; // VD: 'e4'
+  to: string;   // VD: 'e4'
 
   @IsString()
   @IsOptional()
-  promotion?: string; // VD: 'q'
+  promotion?: string; // Nếu phong cấp (vd: 'q')
 }

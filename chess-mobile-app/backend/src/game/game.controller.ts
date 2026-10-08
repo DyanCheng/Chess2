@@ -1,24 +1,30 @@
-import { Controller, Post, Get, Body, Param } from '@nestjs/common';
+import { Controller, Post, Get, Param, Body } from '@nestjs/common';
 import { GameService } from './game.service';
 import { CreateGameDto } from './dto/create-game.dto';
 import { MoveDto } from './dto/move.dto';
 
-@Controller('games')
+@Controller('matches')
 export class GameController {
   constructor(private readonly gameService: GameService) {}
 
+  // BE-008: Create match
   @Post()
   async createMatch(@Body() createGameDto: CreateGameDto) {
-    return await this.gameService.createGame(createGameDto);
+    return this.gameService.createMatch(createGameDto);
   }
 
-  @Get(':id')
-  async getMatch(@Param('id') id: string) {
-    return await this.gameService.getGame(id);
+  // BE-009: Get match
+  @Get(':matchId')
+  async getMatch(@Param('matchId') matchId: string) {
+    return this.gameService.getMatch(matchId);
   }
 
-  @Post('move')
-  async makeMove(@Body() moveDto: MoveDto) {
-    return await this.gameService.makeMove(moveDto);
+  // BE-010: Make move API
+  @Post(':matchId/move')
+  async makeMove(
+    @Param('matchId') matchId: string,
+    @Body() moveDto: MoveDto,
+  ) {
+    return this.gameService.makeMove(matchId, moveDto);
   }
 }

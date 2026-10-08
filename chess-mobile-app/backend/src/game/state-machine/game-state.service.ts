@@ -3,22 +3,27 @@ import { GameState } from './game-state.enum';
 
 @Injectable()
 export class GameStateService {
-  // BE-012: Match state machine - Chuyển đổi trạng thái hợp lệ
+  // BE-012: Cấu hình State Machine
+  private allowedTransitions = new Map<GameState, GameState[]>([
+    [GameState.WAITING, [GameState.READY, GameState.CANCELLED]],
+    [GameState.READY, [GameState.PLAYING, GameState.CANCELLED, GameState.DISCONNECTED]],
+    [GameState.PLAYING, [GameState.FINISHED, GameState.DRAW, GameState.DISCONNECTED, GameState.ABANDONED]],
+    [GameState.DISCONNECTED, [GameState.PLAYING, GameState.ABANDONED]],
+    [GameState.FINISHED, []],
+    [GameState.CANCELLED, []],
+    [GameState.ABANDONED, []],
+    [GameState.DRAW, []],
+  ]);
+
   canTransition(currentState: GameState, nextState: GameState): boolean {
-    switch (currentState) {
-      case GameState.WAITING:
-        return [GameState.IN_PROGRESS, GameState.CANCELLED].includes(nextState);
-      case GameState.IN_PROGRESS:
-        return [GameState.FINISHED, GameState.CANCELLED].includes(nextState);
-      default:
-        return false;
-    }
+    const allowed = this.allowedTransitions.get(currentState);
+    return allowed ? allowed.includes(nextState) : false;
   }
 
-  // BE-011: Game state service - Cập nhật FEN
-  updateBoardState(currentFen: string, move: string): string {
-    // Tích hợp logic chess.js hoặc chess-engine tùy custom để tạo FEN mới
-    // Trả về chuỗi FEN sau khi nước đi hợp lệ được thực hiện
-    return 'new-fen-string-after-move'; 
+  transition(currentState: GameState, nextState: GameState): GameState {
+    if (!this.canTransition(currentState, nextState)) {
+      throw new BadRequestException(`Không thể chuyển trạng thái từ ${currentState} sang ${nextState}`);
+    }
+    return nextState;
   }
 }
