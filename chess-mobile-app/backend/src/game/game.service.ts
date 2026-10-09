@@ -3,14 +3,17 @@ import { GameStateService } from './state-machine/game-state.service';
 import { GameState } from './state-machine/game-state.enum';
 import { CreateGameDto } from './dto/create-game.dto';
 import { MoveDto } from './dto/move.dto';
+import { ChessRuleService } from './rules/chess-rule.service';
 
 @Injectable()
 export class GameService {
-  // Sử dụng cấu trúc tạm thời (Sau này team bạn sẽ thay bằng DB Repository như Supabase)
   private matches = new Map<string, any>();
   private matchMoves = new Map<string, any[]>(); 
 
-  constructor(private gameStateService: GameStateService) {}
+  constructor(
+    private gameStateService: GameStateService,
+    private chessRuleService: ChessRuleService, // Inject ChessRuleService
+  ) {}
 
   // BE-008: Create match
   async createMatch(createGameDto: CreateGameDto) {
@@ -19,12 +22,12 @@ export class GameService {
       id: matchId,
       player1: createGameDto.playerId,
       player2: null,
-      state: GameState.WAITING, // Trạng thái bắt đầu
+      state: GameState.WAITING,
       createdAt: new Date(),
     };
     
     this.matches.set(matchId, newMatch);
-    this.matchMoves.set(matchId, []); // BE-013: Khởi tạo mảng lưu nước đi
+    this.matchMoves.set(matchId, []); 
     
     return newMatch;
   }
@@ -51,6 +54,14 @@ export class GameService {
        throw new BadRequestException(`Không thể đi cờ ở trạng thái hiện tại: ${match.state}`);
     }
 
+    // Gọi ChessRuleService để validate và áp dụng nước đi (Service sẽ tự throw BadRequestException nếu sai luật)
+    const result = this.chessRuleService.validateAndApply(
+      matchId,
+      moveDto.from, // Ô bắt đầu (ví dụ: 'e2')
+      moveDto.to,   // Ô đích đến (ví dụ: 'e4')
+      moveDto.promotion // Mã phong cấp nếu có (q, r, b, n)
+    );
+
     // BE-013: Move persistence (Lưu lại lịch sử nước đi)
     const moves = this.matchMoves.get(matchId);
     moves.push({
@@ -58,7 +69,10 @@ export class GameService {
       timestamp: new Date(),
     });
 
-    // (Tại đây tương lai sẽ tích hợp với Chess Rules Service để validate nước đi)
+    // Kiểm tra xem ván đấu đã kết thúc chưa sau nước đi này
+    if (this.chessRuleService.isGameOver(matchId)) {
+      match.state = this.gameStateService.transition(match.state, GameState.FINISHED);
+    }
 
     // BE-014: Match result handling
     this.handleMatchResult(match);
@@ -66,19 +80,16 @@ export class GameService {
     return { 
         success: true, 
         matchState: match.state, 
-        latestMove: moveDto 
+        latestMove: moveDto,
+        currentTurn: result.turn 
     };
   }
 
   // BE-014: Match result handling
   private handleMatchResult(match: any) {
-    // Tích hợp logic luật cờ vua thật vào đây (Chiếu bí, hết thời gian, hòa...)
-    const isCheckmate = false; 
     const isDraw = false;
 
-    if (isCheckmate) {
-      match.state = this.gameStateService.transition(match.state, GameState.FINISHED);
-    } else if (isDraw) {
+    if (isDraw && match.state !== GameState.FINISHED) {
       match.state = this.gameStateService.transition(match.state, GameState.DRAW);
     }
   }
