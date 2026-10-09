@@ -1,11 +1,97 @@
-// Bổ sung các hàm kiểm tra trạng thái ván đấu vào lớp ChessGame
+import { Board } from './board';
+import { MoveValidator } from './validator';
+import { BoardPosition, ChessMove, PieceColor, BoardState, PieceType } from './types';
+
+export class ChessGame {
+  private board: Board;
+  private currentTurn: PieceColor;
+  private moveHistory: ChessMove[];
+
+  constructor() {
+    this.board = new Board();
+    this.currentTurn = 'white';
+    this.moveHistory = [];
+  }
+
+  public getBoardGrid(): BoardState {
+    return this.board.getGrid();
+  }
+
+  public getCurrentTurn(): PieceColor {
+    return this.currentTurn;
+  }
+
+  public getMoveHistory(): ChessMove[] {
+    return this.moveHistory;
+  }
+
+  public makeMove(from: BoardPosition, to: BoardPosition, promotionType?: PieceType): boolean {
+    const grid = this.board.getGrid();
+    const piece = grid[from.row][from.col];
+    if (!piece) return false;
+    if (piece.color !== this.currentTurn) return false;
+
+    const lastMove = this.moveHistory[this.moveHistory.length - 1];
+    if (!MoveValidator.isValidMove(grid, from, to, lastMove)) return false;
+
+    let targetPiece = grid[to.row][to.col];
+    let isCastling = false;
+    let isEnPassant = false;
+
+    // Nhập thành
+    if (piece.type === 'king' && Math.abs(to.col - from.col) === 2) {
+      isCastling = true;
+      const rookCol = to.col > from.col ? 7 : 0;
+      const newRookCol = to.col > from.col ? 5 : 3;
+      const rook = grid[from.row][rookCol];
+      if (rook) {
+        grid[from.row][newRookCol] = { ...rook, hasMoved: true };
+        grid[from.row][rookCol] = null;
+      }
+    }
+
+    // Bắt tốt qua đường
+    if (piece.type === 'pawn' && from.col !== to.col && !targetPiece) {
+      isEnPassant = true;
+      targetPiece = grid[from.row][to.col];
+      grid[from.row][to.col] = null;
+    }
+
+    // Phong cấp tốt
+    let finalPieceType = piece.type;
+    if (piece.type === 'pawn' && (to.row === 0 || to.row === 7)) {
+      if (promotionType && ['queen', 'rook', 'bishop', 'knight'].includes(promotionType)) {
+        finalPieceType = promotionType;
+      } else {
+        finalPieceType = 'queen';
+      }
+    }
+
+    grid[to.row][to.col] = { ...piece, type: finalPieceType, hasMoved: true };
+    grid[from.row][from.col] = null;
+
+    const move: ChessMove = {
+      from,
+      to,
+      piece,
+      captured: targetPiece || undefined,
+      isCastling,
+      isEnPassant,
+      promotion: finalPieceType !== piece.type ? finalPieceType : undefined,
+      notation: `${piece.type}_${from.row}${from.col}->${to.row}${to.col}`,
+      timestamp: Date.now(),
+    };
+
+    this.moveHistory.push(move);
+    this.currentTurn = this.currentTurn === 'white' ? 'black' : 'white';
+    return true;
+  }
+
   public isGameOver(): boolean {
     return this.checkStalemate() || this.checkInsufficientMaterial();
   }
 
-  // GAME-011: Kiểm tra Stalemate (Hết nước đi nhưng không bị chiếu)
   public checkStalemate(): boolean {
-    // Duyệt qua tất cả các quân của lượt hiện tại, nếu còn ít nhất 1 nước đi hợp lệ thì chưa stalemate
     const grid = this.board.getGrid();
     const lastMove = this.moveHistory[this.moveHistory.length - 1];
 
@@ -13,21 +99,19 @@
       for (let c = 0; c < 8; c++) {
         const piece = grid[r][c];
         if (piece && piece.color === this.currentTurn) {
-          // Thử đi đến tất cả các ô trên bàn cờ
           for (let tr = 0; tr < 8; tr++) {
             for (let tc = 0; tc < 8; tc++) {
               if (MoveValidator.isValidMove(grid, { row: r, col: c }, { row: tr, col: tc }, lastMove)) {
-                return false; // Còn ít nhất 1 nước đi hợp lệ -> không phải stalemate
+                return false;
               }
             }
           }
         }
       }
     }
-    return true; // Không còn nước nào đi được
+    return true;
   }
 
-  // GAME-012: Kiểm tra thiếu quân (Insufficient Material) để chiếu hết
   public checkInsufficientMaterial(): boolean {
     const grid = this.board.getGrid();
     const pieces: { type: string; color: string }[] = [];
@@ -35,41 +119,30 @@
     for (let r = 0; r < 8; r++) {
       for (let c = 0; c < 8; c++) {
         const piece = grid[r][c];
-        if (piece) {
-          pieces.push({ type: piece.type, color: piece.color });
-        }
+        if (piece) pieces.push({ type: piece.type, color: piece.color });
       }
     }
 
-    // Chỉ còn 2 Vua
     if (pieces.length === 2) return true;
-
-    // Vua + Mã hoặc Vua + Tượng đấu với Vua đơn lẻ
     if (pieces.length === 3) {
-      const hasMinorPiece = pieces.some(p => p.type === 'knight' || p.type === 'bishop');
-      if (hasMinorPiece) return true;
+      return pieces.some((p) => p.type === 'knight' || p.type === 'bishop');
     }
-
     return false;
   }
 
-  // GAME-015: Serialize trạng thái ván đấu (để lưu vào Database hoặc gửi qua WebSocket)
   public serializeState(): string {
     return JSON.stringify({
       board: this.board.getGrid(),
       currentTurn: this.currentTurn,
-      moveHistory: this.moveHistory
+      moveHistory: this.moveHistory,
     });
   }
 
-  // GAME-015: Restore trạng thái ván đấu từ Database
   public restoreState(serializedData: string): boolean {
     try {
       const data = JSON.parse(serializedData);
-      // Gán lại dữ liệu cho game
       this.currentTurn = data.currentTurn;
       this.moveHistory = data.moveHistory;
-      // Khôi phục mảng board grid
       const grid = this.board.getGrid();
       for (let r = 0; r < 8; r++) {
         for (let c = 0; c < 8; c++) {
@@ -80,4 +153,5 @@
     } catch (e) {
       return false;
     }
-  }git status
+  }
+}
