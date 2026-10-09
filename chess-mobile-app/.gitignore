@@ -1,0 +1,27 @@
+# dependencies
+node_modules/
+**/node_modules/
+
+# Android build outputs & caches
+mobile/android/.gradle/
+mobile/android/app/build/
+mobile/android/build/
+mobile/android/.cxx/
+mobile/android/app/.cxx/
+*.apk
+*.aab
+
+# iOS build outputs & caches
+mobile/ios/Pods/
+mobile/ios/build/
+mobile/ios/DerivedData/
+*.xcworkspace
+
+# Environment & IDE
+.DS_Store
+.idea/
+.vscode/
+*.log
+scratch/
+.system_generated/
+*.tgz
