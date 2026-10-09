@@ -26,7 +26,7 @@ export class MoveValidator {
       case 'queen':
         return this.isValidQueenMove(board, from, to);
       case 'king':
-        return this.isValidKingMove(board, from, to) || this.isValidCastling(board, from, to, piece.color);
+                return this.isValidKingMove(from, to) || this.isValidCastling(board, from, to, piece.color);
       default:
         return false;
     }
