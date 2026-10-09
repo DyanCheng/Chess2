@@ -1,5 +1,0 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-const game_1 = require("./game");
-function runTest() { console.log('=== KHOI TAO VAN DAU ==='); const game = new game_1.ChessGame(); console.log('Luot hien tai:', game.getCurrentTurn()); console.log('Quan o e2:', game.getBoardGrid()[6][4]?.type); console.log('\n=== THU DI NUOC DI (Tot e2 -> e4) ==='); const from = { row: 6, col: 4 }; const to = { row: 4, col: 4 }; const success = game.makeMove(from, to); console.log('Di chuyen thanh cong:', success); console.log('Luot hien tai sau khi di:', game.getCurrentTurn()); console.log('Quan o e4:', game.getBoardGrid()[4][4]?.type); console.log('Lich su nuoc di:', game.getMoveHistory().length); console.log('\n=== KIEM TRA SERIALIZE ==='); const jsonState = game.serializeState(); console.log('Da serialize trang thai thanh cong, do dai chuoi:', jsonState.length); }
-runTest();
