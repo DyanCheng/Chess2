@@ -1,4 +1,4 @@
-name: Docker
+name: Publish backend image
 
 # This workflow uses actions that are not certified by GitHub.
 # They are provided by a third-party and are governed by
@@ -6,14 +6,19 @@ name: Docker
 # documentation.
 
 on:
-  schedule:
-    - cron: '37 2 * * *'
   push:
-    branches: [ "main" ]
+    branches: [main, backup_main]
     # Publish semver tags as releases.
     tags: [ 'v*.*.*' ]
+    paths:
+      - 'chess-mobile-app/backend/**'
+      - '.github/workflows/docker-publish.yml'
   pull_request:
-    branches: [ "main" ]
+    branches: [main, backup_main]
+    paths:
+      - 'chess-mobile-app/backend/**'
+      - '.github/workflows/docker-publish.yml'
+  workflow_dispatch:
 
 env:
   # Use docker.io for Docker Hub if empty
@@ -23,8 +28,24 @@ env:
 
 
 jobs:
-  build:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: chess-mobile-app/backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: chess-mobile-app/backend/package-lock.json
+      - run: npm ci
+      - run: npm run build
+      - run: npm test
 
+  build:
+    needs: test
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -40,7 +61,7 @@ jobs:
       # Install the cosign tool except on PR
       # https://github.com/sigstore/cosign-installer
       - name: Install cosign
-        if: github.event_name != 'pull_request'
+        if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
         uses: sigstore/cosign-installer@59acb6260d9c0ba8f4a2f9d9b48431a222b68e20 #v3.5.0
         with:
           cosign-release: 'v2.2.4'
@@ -54,7 +75,7 @@ jobs:
       # Login against a Docker registry except on PR
       # https://github.com/docker/login-action
       - name: Log into registry ${{ env.REGISTRY }}
-        if: github.event_name != 'pull_request'
+        if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
         uses: docker/login-action@343f7c4344506bcbf9b4de18042ae17996df046d # v3.0.0
         with:
           registry: ${{ env.REGISTRY }}
@@ -75,8 +96,9 @@ jobs:
         id: build-and-push
         uses: docker/build-push-action@0565240e2d4ab88bba5387d719585280857ece09 # v5.0.0
         with:
-          context: .
-          push: ${{ github.event_name != 'pull_request' }}
+          context: ./chess-mobile-app/backend
+          file: ./chess-mobile-app/backend/Dockerfile
+          push: ${{ github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')) }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
@@ -88,7 +110,7 @@ jobs:
       # transparency data even for private images, pass --force to cosign below.
       # https://github.com/sigstore/cosign
       - name: Sign the published Docker image
-        if: ${{ github.event_name != 'pull_request' }}
+        if: ${{ github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')) }}
         env:
           # https://docs.github.com/en/actions/security-guides/security-hardening-for-github-actions#using-an-intermediate-environment-variable
           TAGS: ${{ steps.meta.outputs.tags }}
