@@ -2,13 +2,14 @@ import {
   WebSocketGateway,
   WebSocketServer,
   SubscribeMessage,
+  MessageBody,
+  ConnectedSocket,
   OnGatewayConnection,
   OnGatewayDisconnect,
-  ConnectedSocket,
-  MessageBody,
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
-import { GameService } from './game.service';
+import { GameService, BoardPosition } from './game.service';
+import { GameSocketEvent } from './state-machine/game-state.enum';
 
 @WebSocketGateway({
   cors: {
@@ -21,59 +22,99 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   constructor(private readonly gameService: GameService) {}
 
-  handleConnection(client: Socket) {
-    const token = client.handshake.query.token as string;
-    // TODO: Verify token via Supabase Auth
-    // const user = await verify(token);
-    
-    // Fake user ID for development
-    const userId = `user_${Math.random().toString(36).substr(2, 9)}`;
-    client.data.userId = userId;
-    
-    console.log(`Client connected: ${client.id} (User: ${userId})`);
-  }
+  handleConnection(_client: Socket) {}
 
-  handleDisconnect(client: Socket) {
-    console.log(`Client disconnected: ${client.id}`);
-    this.gameService.handleDisconnect(client.data.userId, this.server);
-  }
+  handleDisconnect(_client: Socket) {}
 
-  @SubscribeMessage('find_match')
-  handleFindMatch(@ConnectedSocket() client: Socket) {
-    const userId = client.data.userId;
-    this.gameService.addToMatchmaking(userId, client, this.server);
-  }
-
-  @SubscribeMessage('cancel_match')
-  handleCancelMatch(@ConnectedSocket() client: Socket) {
-    const userId = client.data.userId;
-    this.gameService.removeFromMatchmaking(userId);
-  }
-
-  @SubscribeMessage('make_move')
-  handleMakeMove(
+  @SubscribeMessage(GameSocketEvent.FIND_MATCH)
+  handleFindMatch(
     @ConnectedSocket() client: Socket,
-    @MessageBody() payload: { gameId: string; from: any; to: any }
+    @MessageBody() payload: { playerId: string },
   ) {
-    const userId = client.data.userId;
-    this.gameService.handleMove(userId, payload.gameId, payload.from, payload.to, this.server);
+    return this.gameService.addToMatchmaking(
+      payload.playerId,
+      client,
+      this.server,
+    );
   }
 
-  @SubscribeMessage('use_card')
-  handleUseCard(
+  @SubscribeMessage(GameSocketEvent.MAKE_MOVE)
+  handleMakeMoveEvent(
+    @ConnectedSocket() _client: Socket,
+    @MessageBody()
+    payload: {
+      playerId: string;
+      gameId: string;
+      from: BoardPosition;
+      to: BoardPosition;
+      promotion?: 'q' | 'r' | 'b' | 'n';
+    },
+  ) {
+    return this.gameService.handleMove(
+      payload.playerId,
+      payload.gameId,
+      payload.from,
+      payload.to,
+      this.server,
+      payload.promotion,
+    );
+  }
+
+  @SubscribeMessage(GameSocketEvent.GAME_MOVE)
+  handleStandardMove(
+    @ConnectedSocket() _client: Socket,
+    @MessageBody()
+    payload: {
+      playerId: string;
+      gameId: string;
+      from: BoardPosition;
+      to: BoardPosition;
+      promotion?: 'q' | 'r' | 'b' | 'n';
+    },
+  ) {
+    return this.gameService.handleMove(
+      payload.playerId,
+      payload.gameId,
+      payload.from,
+      payload.to,
+      this.server,
+      payload.promotion,
+    );
+  }
+
+  @SubscribeMessage(GameSocketEvent.JOIN_GAME)
+  handleJoinGame(
     @ConnectedSocket() client: Socket,
-    @MessageBody() payload: { gameId: string; cardId: string; target?: any }
+    @MessageBody() payload: { gameId: string; playerId: string },
   ) {
-    const userId = client.data.userId;
-    this.gameService.handleCardUse(userId, payload.gameId, payload.cardId, payload.target, this.server);
+    client.join(payload.gameId);
+    const game = this.gameService.joinGame(payload.gameId, payload.playerId);
+    this.server?.to(payload.gameId).emit(GameSocketEvent.STATE_UPDATED, game);
+    return { success: true, data: game };
   }
 
-  @SubscribeMessage('resign')
+  @SubscribeMessage(GameSocketEvent.RESIGN)
   handleResign(
-    @ConnectedSocket() client: Socket,
-    @MessageBody() payload: { gameId: string }
+    @ConnectedSocket() _client: Socket,
+    @MessageBody() payload: { gameId: string; playerId: string },
   ) {
-    const userId = client.data.userId;
-    this.gameService.handleResign(userId, payload.gameId, this.server);
+    const game = this.gameService.resignGame(payload.gameId, payload.playerId);
+    this.server?.to(game.id).emit(GameSocketEvent.GAME_OVER, {
+      gameId: game.id,
+      winnerId: game.winnerId,
+      reason: game.endReason,
+      state: game.state,
+    });
+    return { success: true, data: game };
+  }
+
+  @SubscribeMessage(GameSocketEvent.SYNC_STATE)
+  handleSyncState(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() payload: { gameId: string },
+  ) {
+    const game = this.gameService.getGameOrThrow(payload.gameId);
+    client.emit(GameSocketEvent.STATE_UPDATED, game);
+    return { success: true, data: game };
   }
 }

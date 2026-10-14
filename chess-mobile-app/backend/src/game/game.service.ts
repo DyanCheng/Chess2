@@ -1,197 +1,485 @@
-import { Injectable } from '@nestjs/common';
-import { Server, Socket } from 'socket.io';
-import { Chess } from 'chess.js';
+import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
+import { GameState, GameEndReason, GameSocketEvent } from './state-machine/game-state.enum';
+import { GameStateService } from './state-machine/game-state.service';
+import { CreateGameDto } from './dto/create-game.dto';
+import { MoveDto } from './dto/move.dto';
 
-interface GameRoom {
+export interface BoardPosition {
+  row: number;
+  col: number;
+}
+
+export interface ActiveGameSession {
   id: string;
-  whiteId: string;
-  blackId: string;
-  chess: Chess;
-  whiteHP: number;
-  blackHP: number;
-  status: 'playing' | 'finished';
+  whitePlayerId: string;
+  blackPlayerId: string | null;
+  mode: 'PVP' | 'BOT';
+  state: GameState;
+  turn: 'w' | 'b';
+  board: string[][];
+  fen: string;
+  moves: Array<{
+    from: BoardPosition;
+    to: BoardPosition;
+    playerId: string;
+    promotion?: string;
+    timestamp: number;
+  }>;
+  hp: {
+    w: number;
+    b: number;
+  };
+  winnerId?: string | null;
+  endReason?: GameEndReason | null;
+  createdAt: number;
+  updatedAt: number;
+}
+
+interface QueuedPlayer {
+  playerId: string;
+  socket: { join: (room: string) => void; emit?: (event: string, payload: any) => void };
 }
 
 @Injectable()
 export class GameService {
-  private matchmakingQueue: { userId: string; socket: Socket }[] = [];
-  private activeGames: Map<string, GameRoom> = new Map();
-  private userToGameMap: Map<string, string> = new Map();
+  private readonly games = new Map<string, ActiveGameSession>();
+  private readonly matchmakingQueue: QueuedPlayer[] = [];
 
-  addToMatchmaking(userId: string, socket: Socket, server: Server) {
-    // Check if already in queue or in game
-    if (this.matchmakingQueue.find(p => p.userId === userId)) return;
-    if (this.userToGameMap.has(userId)) return;
+  constructor(
+    private readonly stateMachine: GameStateService = new GameStateService(),
+  ) {}
 
-    this.matchmakingQueue.push({ userId, socket });
-    console.log(`User ${userId} joined matchmaking. Queue size: ${this.matchmakingQueue.length}`);
+  /**
+   * Ghép cặp người chơi và phát sự kiện match_found (Chuẩn hóa theo test CI & State Machine)
+   */
+  addToMatchmaking(playerId: string, client: any, server: any): ActiveGameSession | null {
+    const existingIndex = this.matchmakingQueue.findIndex((p) => p.playerId === playerId);
+    if (existingIndex !== -1) {
+      this.matchmakingQueue[existingIndex].socket = client;
+      return null;
+    }
 
-    this.tryMatchmaking(server);
+    this.matchmakingQueue.push({ playerId, socket: client });
+
+    if (this.matchmakingQueue.length < 2) {
+      return null;
+    }
+
+    const whitePlayer = this.matchmakingQueue.shift()!;
+    const blackPlayer = this.matchmakingQueue.shift()!;
+
+    const game = this.createGame({
+      whitePlayerId: whitePlayer.playerId,
+      blackPlayerId: blackPlayer.playerId,
+      mode: 'PVP',
+    });
+
+    whitePlayer.socket?.join?.(game.id);
+    blackPlayer.socket?.join?.(game.id);
+
+    server?.to?.(game.id)?.emit(GameSocketEvent.MATCH_FOUND, {
+      gameId: game.id,
+      white: game.whitePlayerId,
+      black: game.blackPlayerId,
+      state: game.state,
+      fen: game.fen,
+    });
+
+    return game;
   }
 
-  removeFromMatchmaking(userId: string) {
-    this.matchmakingQueue = this.matchmakingQueue.filter(p => p.userId !== userId);
-  }
+  /**
+   * Xử lý nước đi qua Socket, kiểm tra State Machine, lượt đi và tính hợp lệ của quân cờ
+   */
+  handleMove(
+    playerId: string,
+    gameId: string,
+    from: BoardPosition,
+    to: BoardPosition,
+    server?: any,
+    promotion?: 'q' | 'r' | 'b' | 'n',
+  ): { success: boolean; game?: ActiveGameSession; error?: string } {
+    const game = this.games.get(gameId);
+    if (!game) {
+      return { success: false, error: 'Game not found' };
+    }
 
-  private tryMatchmaking(server: Server) {
-    if (this.matchmakingQueue.length >= 2) {
-      const p1 = this.matchmakingQueue.shift();
-      const p2 = this.matchmakingQueue.shift();
-
-      const gameId = `game_${Date.now()}`;
-      
-      const game: GameRoom = {
-        id: gameId,
-        whiteId: p1.userId,
-        blackId: p2.userId,
-        chess: new Chess(),
-        whiteHP: 40,
-        blackHP: 40,
-        status: 'playing'
-      };
-
-      this.activeGames.set(gameId, game);
-      this.userToGameMap.set(p1.userId, gameId);
-      this.userToGameMap.set(p2.userId, gameId);
-
-      p1.socket.join(gameId);
-      p2.socket.join(gameId);
-
-      server.to(gameId).emit('match_found', {
+    if (!this.stateMachine.isPlayable(game.state)) {
+      server?.to?.(gameId)?.emit(GameSocketEvent.MOVE_REJECTED, {
         gameId,
-        whiteId: p1.userId,
-        blackId: p2.userId,
-        fen: game.chess.fen()
+        playerId,
+        reason: `Invalid game state: ${game.state}`,
       });
-
-      console.log(`Game started: ${gameId}`);
+      return { success: false, error: `Invalid game state: ${game.state}` };
     }
+
+    const activePlayerId = game.turn === 'w' ? game.whitePlayerId : game.blackPlayerId;
+    if (playerId !== activePlayerId) {
+      server?.to?.(gameId)?.emit(GameSocketEvent.MOVE_REJECTED, {
+        gameId,
+        playerId,
+        reason: 'Not your turn',
+      });
+      return { success: false, error: 'Not your turn' };
+    }
+
+    if (!this.isValidBoardMove(game.board, from, to, game.turn)) {
+      server?.to?.(gameId)?.emit(GameSocketEvent.MOVE_REJECTED, {
+        gameId,
+        playerId,
+        reason: 'Illegal move',
+      });
+      return { success: false, error: 'Illegal move' };
+    }
+
+    // Thực hiện di chuyển quân trên bàn cờ
+    const movingPiece = game.board[from.row][from.col];
+    const targetPiece = game.board[to.row][to.col];
+
+    game.board[from.row][from.col] = '';
+    if (
+      movingPiece.toLowerCase() === 'p' &&
+      (to.row === 0 || to.row === 7)
+    ) {
+      const promoChar = promotion || 'q';
+      game.board[to.row][to.col] =
+        game.turn === 'w' ? promoChar.toUpperCase() : promoChar.toLowerCase();
+    } else {
+      game.board[to.row][to.col] = movingPiece;
+    }
+
+    game.moves.push({
+      from,
+      to,
+      playerId,
+      promotion,
+      timestamp: Date.now(),
+    });
+
+    // Đổi lượt và cập nhật chuỗi FEN
+    game.turn = game.turn === 'w' ? 'b' : 'w';
+    const fullMoveNumber = Math.floor(game.moves.length / 2) + 1;
+    game.fen = this.boardToFen(game.board, game.turn, fullMoveNumber);
+    game.updatedAt = Date.now();
+
+    // Nếu ăn vua đối phương thì kết thúc ván đấu qua State Machine
+    if (targetPiece && targetPiece.toLowerCase() === 'k') {
+      this.finishGame(game.id, playerId, GameEndReason.CHECKMATE);
+    } else if (game.state === GameState.CHECK) {
+      game.state = this.stateMachine.transition(game.state, GameState.IN_PROGRESS);
+    }
+
+    const movePayload = {
+      gameId: game.id,
+      playerId,
+      from,
+      to,
+      fen: game.fen,
+      turn: game.turn,
+      state: game.state,
+    };
+
+    server?.to?.(game.id)?.emit(GameSocketEvent.MOVE_MADE, movePayload);
+
+    if (game.state === GameState.FINISHED) {
+      server?.to?.(game.id)?.emit(GameSocketEvent.GAME_OVER, {
+        gameId: game.id,
+        winnerId: game.winnerId,
+        reason: game.endReason,
+        state: game.state,
+      });
+    }
+
+    return { success: true, game };
   }
 
-  handleMove(userId: string, gameId: string, from: any, to: any, server: Server) {
-    const game = this.activeGames.get(gameId);
-    if (!game || game.status !== 'playing') return;
+  /**
+   * Tạo ván đấu mới (Khởi tạo State Machine)
+   */
+  createGame(dto: CreateGameDto | any = {}): ActiveGameSession {
+    const gameId =
+      dto?.id || `game_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+    const mode = dto?.mode || (dto?.blackPlayerId === 'BOT' ? 'BOT' : 'PVP');
+    const hasBothPlayers = Boolean(
+      dto?.whitePlayerId && (dto?.blackPlayerId || mode === 'BOT'),
+    );
 
-    // Convert algebraic notation (e.g., from frontend to chess.js format)
-    const columns = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'];
-    const fromSquare = `${columns[from.col]}${8 - from.row}`;
-    const toSquare = `${columns[to.col]}${8 - to.row}`;
-
-    // Validate turn
-    const isWhiteTurn = game.chess.turn() === 'w';
-    if ((isWhiteTurn && userId !== game.whiteId) || (!isWhiteTurn && userId !== game.blackId)) {
-      return; // Not their turn
+    let initialState = GameState.WAITING;
+    if (hasBothPlayers) {
+      initialState = this.stateMachine.transition(
+        GameState.WAITING,
+        GameState.STARTING,
+      );
+      initialState = this.stateMachine.transition(
+        initialState,
+        GameState.IN_PROGRESS,
+      );
     }
 
-    try {
-      // Validate and execute move via chess.js
-      const move = game.chess.move({
-        from: fromSquare,
-        to: toSquare,
-        promotion: 'q' // Auto queen for MVP
-      });
+    const board = this.createInitialBoard();
+    const session: ActiveGameSession = {
+      id: gameId,
+      whitePlayerId: dto?.whitePlayerId || 'white',
+      blackPlayerId: mode === 'BOT' ? 'BOT' : (dto?.blackPlayerId ?? null),
+      mode,
+      state: initialState,
+      turn: 'w',
+      board,
+      fen: this.boardToFen(board, 'w', 1),
+      moves: [],
+      hp: { w: 100, b: 100 },
+      winnerId: null,
+      endReason: null,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    };
 
-      if (move) {
-        // Calculate HP damage if capture
-        if (move.captured) {
-          const damageMap = { p: 2, n: 6, b: 6, r: 10, q: 18 };
-          const damage = damageMap[move.captured] || 0;
-          
-          if (isWhiteTurn) {
-            game.blackHP -= damage;
-          } else {
-            game.whiteHP -= damage;
-          }
-        }
+    this.games.set(gameId, session);
+    return session;
+  }
 
-        // Broadcast valid move
-        server.to(gameId).emit('move_made', {
-          from,
-          to,
-          fen: game.chess.fen(),
-          whiteHP: game.whiteHP,
-          blackHP: game.blackHP
-        });
+  joinGame(gameId: string, playerId: string): ActiveGameSession {
+    const game = this.getGameOrThrow(gameId);
 
-        this.checkGameEnd(game, server);
+    if (!game.blackPlayerId && game.whitePlayerId !== playerId) {
+      game.blackPlayerId = playerId;
+    }
+
+    if (
+      game.state === GameState.WAITING &&
+      game.whitePlayerId &&
+      game.blackPlayerId
+    ) {
+      game.state = this.stateMachine.transition(
+        game.state,
+        GameState.IN_PROGRESS,
+      );
+      game.updatedAt = Date.now();
+    }
+
+    return game;
+  }
+
+  makeMove(dto: MoveDto | any, server?: any): ActiveGameSession {
+    const gameId = dto?.gameId || dto?.id;
+    const game = this.getGameOrThrow(gameId);
+    const from = this.normalizePosition(dto.from);
+    const to = this.normalizePosition(dto.to);
+    const playerId =
+      dto?.playerId ||
+      (game.turn === 'w' ? game.whitePlayerId : game.blackPlayerId || 'black');
+
+    const result = this.handleMove(
+      playerId,
+      gameId,
+      from,
+      to,
+      server,
+      dto?.promotion,
+    );
+
+    if (!result.success) {
+      throw new BadRequestException(result.error);
+    }
+
+    return result.game!;
+  }
+
+  finishGame(
+    gameId: string,
+    winnerId: string | null,
+    reason: GameEndReason = GameEndReason.CHECKMATE,
+  ): ActiveGameSession {
+    const game = this.getGameOrThrow(gameId);
+    if (!this.stateMachine.isTerminal(game.state)) {
+      game.state = this.stateMachine.transition(
+        game.state,
+        GameState.FINISHED,
+      );
+      game.winnerId = winnerId;
+      game.endReason = reason;
+      game.updatedAt = Date.now();
+    }
+    return game;
+  }
+
+  resignGame(gameId: string, resigningPlayerId: string): ActiveGameSession {
+    const game = this.getGameOrThrow(gameId);
+    const winnerId =
+      resigningPlayerId === game.whitePlayerId
+        ? game.blackPlayerId
+        : game.whitePlayerId;
+    return this.finishGame(gameId, winnerId ?? null, GameEndReason.RESIGNATION);
+  }
+
+  getGame(gameId: string): ActiveGameSession | undefined {
+    return this.games.get(gameId);
+  }
+
+  getGameOrThrow(gameId: string): ActiveGameSession {
+    const game = this.games.get(gameId);
+    if (!game) {
+      throw new NotFoundException(`Game not found: ${gameId}`);
+    }
+    return game;
+  }
+
+  private normalizePosition(pos: string | BoardPosition): BoardPosition {
+    if (typeof pos === 'object' && pos !== null) {
+      return { row: Number(pos.row), col: Number(pos.col) };
+    }
+    const clean = String(pos).trim().toLowerCase();
+    const col = clean.charCodeAt(0) - 'a'.charCodeAt(0);
+    const rank = parseInt(clean[1], 10);
+    return { row: 8 - rank, col };
+  }
+
+  private isValidBoardMove(
+    board: string[][],
+    from: BoardPosition,
+    to: BoardPosition,
+    turn: 'w' | 'b',
+  ): boolean {
+    if (
+      !from ||
+      !to ||
+      from.row < 0 ||
+      from.row > 7 ||
+      from.col < 0 ||
+      from.col > 7 ||
+      to.row < 0 ||
+      to.row > 7 ||
+      to.col < 0 ||
+      to.col > 7
+    ) {
+      return false;
+    }
+
+    if (from.row === to.row && from.col === to.col) {
+      return false;
+    }
+
+    const piece = board[from.row]?.[from.col];
+    if (!piece) {
+      return false;
+    }
+
+    const isWhitePiece = piece === piece.toUpperCase();
+    if ((turn === 'w' && !isWhitePiece) || (turn === 'b' && isWhitePiece)) {
+      return false;
+    }
+
+    const target = board[to.row]?.[to.col];
+    if (target) {
+      const isWhiteTarget = target === target.toUpperCase();
+      if (isWhitePiece === isWhiteTarget) {
+        return false;
       }
-    } catch (error) {
-      // Invalid move (chess.js throws or returns null)
-      console.log('Invalid move attempted');
+    }
+
+    const dr = to.row - from.row;
+    const dc = to.col - from.col;
+    const absDr = Math.abs(dr);
+    const absDc = Math.abs(dc);
+    const type = piece.toLowerCase();
+
+    switch (type) {
+      case 'p': {
+        const dir = isWhitePiece ? -1 : 1;
+        const startRow = isWhitePiece ? 6 : 1;
+        if (dc === 0 && dr === dir && !target) {
+          return true;
+        }
+        if (
+          dc === 0 &&
+          from.row === startRow &&
+          dr === 2 * dir &&
+          !target &&
+          !board[from.row + dir][from.col]
+        ) {
+          return true;
+        }
+        if (absDc === 1 && dr === dir && Boolean(target)) {
+          return true;
+        }
+        return false;
+      }
+      case 'n':
+        return (absDr === 2 && absDc === 1) || (absDr === 1 && absDc === 2);
+      case 'b':
+        return absDr === absDc && this.isPathClear(board, from, to);
+      case 'r':
+        return (dr === 0 || dc === 0) && this.isPathClear(board, from, to);
+      case 'q':
+        return (
+          (dr === 0 || dc === 0 || absDr === absDc) &&
+          this.isPathClear(board, from, to)
+        );
+      case 'k':
+        return absDr <= 1 && absDc <= 1;
+      default:
+        return false;
     }
   }
 
-  handleCardUse(userId: string, gameId: string, cardId: string, target: any, server: Server) {
-    const game = this.activeGames.get(gameId);
-    if (!game || game.status !== 'playing') return;
+  private isPathClear(
+    board: string[][],
+    from: BoardPosition,
+    to: BoardPosition,
+  ): boolean {
+    const stepRow = Math.sign(to.row - from.row);
+    const stepCol = Math.sign(to.col - from.col);
+    let r = from.row + stepRow;
+    let c = from.col + stepCol;
 
-    // TODO: Implement actual card logic
-    console.log(`User ${userId} used card ${cardId} in game ${gameId}`);
-    
-    server.to(gameId).emit('card_used', {
-      userId,
-      cardId,
-      target
+    while (r !== to.row || c !== to.col) {
+      if (board[r][c]) {
+        return false;
+      }
+      r += stepRow;
+      c += stepCol;
+    }
+    return true;
+  }
+
+  private boardToFen(
+    board: string[][],
+    turn: 'w' | 'b',
+    fullMoveNumber = 1,
+  ): string {
+    const rows = board.map((row) => {
+      let empty = 0;
+      let str = '';
+      for (const cell of row) {
+        if (!cell) {
+          empty++;
+        } else {
+          if (empty > 0) {
+            str += empty;
+            empty = 0;
+          }
+          str += cell;
+        }
+      }
+      if (empty > 0) {
+        str += empty;
+      }
+      return str;
     });
+
+    return `${rows.join('/')} ${turn} KQkq - 0 ${fullMoveNumber}`;
   }
 
-  handleResign(userId: string, gameId: string, server: Server) {
-    const game = this.activeGames.get(gameId);
-    if (!game || game.status !== 'playing') return;
-
-    game.status = 'finished';
-    const winnerId = userId === game.whiteId ? game.blackId : game.whiteId;
-
-    server.to(gameId).emit('game_over', {
-      winnerId,
-      reason: 'resign'
-    });
-
-    this.cleanupGame(gameId);
-  }
-
-  handleDisconnect(userId: string, server: Server) {
-    this.removeFromMatchmaking(userId);
-    
-    const gameId = this.userToGameMap.get(userId);
-    if (gameId) {
-      this.handleResign(userId, gameId, server);
-    }
-  }
-
-  private checkGameEnd(game: GameRoom, server: Server) {
-    let winnerId = null;
-    let reason = '';
-
-    if (game.chess.isCheckmate()) {
-      winnerId = game.chess.turn() === 'w' ? game.blackId : game.whiteId;
-      reason = 'checkmate';
-    } else if (game.whiteHP <= 0) {
-      winnerId = game.blackId;
-      reason = 'hp_depleted';
-    } else if (game.blackHP <= 0) {
-      winnerId = game.whiteId;
-      reason = 'hp_depleted';
-    } else if (game.chess.isStalemate() || game.chess.isDraw()) {
-      reason = 'draw';
-    }
-
-    if (reason) {
-      game.status = 'finished';
-      server.to(game.id).emit('game_over', {
-        winnerId,
-        reason
-      });
-      this.cleanupGame(game.id);
-    }
-  }
-
-  private cleanupGame(gameId: string) {
-    const game = this.activeGames.get(gameId);
-    if (game) {
-      this.userToGameMap.delete(game.whiteId);
-      this.userToGameMap.delete(game.blackId);
-      this.activeGames.delete(gameId);
-    }
+  private createInitialBoard(): string[][] {
+    return [
+      ['r', 'n', 'b', 'q', 'k', 'b', 'n', 'r'],
+      ['p', 'p', 'p', 'p', 'p', 'p', 'p', 'p'],
+      ['', '', '', '', '', '', '', ''],
+      ['', '', '', '', '', '', '', ''],
+      ['', '', '', '', '', '', '', ''],
+      ['', '', '', '', '', '', '', ''],
+      ['P', 'P', 'P', 'P', 'P', 'P', 'P', 'P'],
+      ['R', 'N', 'B', 'Q', 'K', 'B', 'N', 'R'],
+    ];
   }
 }
