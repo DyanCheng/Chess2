@@ -1,8 +1,9 @@
-// chess-mobile-app/backend/src/game/dto/create-game.dto.ts
 export class CreateGameDto {
+  gameId?: string;
   whitePlayerId: string;
-  blackPlayerId?: string;
-  mode?: 'PVP' | 'BOT';
-  botDifficulty?: 'EASY' | 'MEDIUM' | 'HARD';
-  timeControlSeconds?: number;
+  blackPlayerId: string;
+  
+  // Thêm 2 dòng này:
+  initialTimeMs?: number; 
+  reconnectTimeoutMs?: number;
 }

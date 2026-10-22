@@ -1,5 +1,4 @@
-// chess-mobile-app/backend/src/game/game.controller.ts
-import { Controller, Post, Get, Body, Param } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param } from '@nestjs/common';
 import { GameService } from './game.service';
 import { CreateGameDto } from './dto/create-game.dto';
 import { MoveDto } from './dto/move.dto';
@@ -15,11 +14,13 @@ export class GameController {
 
   @Get(':id')
   getGame(@Param('id') id: string) {
-    return this.gameService.getGameOrThrow(id);
+    // Đã đổi từ getGameOrThrow sang getGameState
+    return this.gameService.getGameState(id);
   }
 
-  @Post('move')
-  makeMove(@Body() dto: MoveDto) {
-    return this.gameService.makeMove(dto);
+  @Post(':id/move')
+  makeMove(@Param('id') id: string, @Body() dto: MoveDto) {
+    // Truyền đủ 2 tham số: gameId và dto
+    return this.gameService.makeMove(id, dto);
   }
 }
