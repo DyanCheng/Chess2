@@ -5,7 +5,7 @@ import { Chess } from 'chess.js';
 export class ChessRuleService {
   private games: Map<string, Chess> = new Map();
 
-  // Khởi tạo hoặc lấy game instance theo matchId
+  // Khá»Ÿi táº¡o hoáº·c láº¥y game instance theo matchId
   getGame(matchId: string, fen?: string): Chess {
     if (!this.games.has(matchId)) {
       this.games.set(matchId, new Chess(fen));
@@ -13,12 +13,12 @@ export class ChessRuleService {
     return this.games.get(matchId)!;
   }
 
-  // Thực hiện nước đi và kiểm tra toàn bộ luật chơi (GAME-008 đến GAME-014)
+  // Thá»±c hiá»‡n nÆ°á»›c Ä‘i vĂ  kiá»ƒm tra toĂ n bá»™ luáº­t chÆ¡i (GAME-008 Ä‘áº¿n GAME-014)
   validateAndApply(matchId: string, from: string, to: string, promotion?: string) {
     const game = this.getGame(matchId);
     
     try {
-      // chess.js tự động xử lý Castling, En passant, Promotion từ đối tượng move
+      // chess.js tá»± Ä‘á»™ng xá»­ lĂ½ Castling, En passant, Promotion tá»« Ä‘á»‘i tÆ°á»£ng move
       const moveResult = game.move({
         from,
         to,
@@ -26,10 +26,10 @@ export class ChessRuleService {
       });
 
       if (!moveResult) {
-        return { success: false, message: 'Nước đi không hợp lệ' };
+        return { success: false, message: 'NÆ°á»›c Ä‘i khĂ´ng há»£p lá»‡' };
       }
 
-      // Kiểm tra trạng thái ván đấu và các điều kiện kết thúc / hòa
+      // Kiá»ƒm tra tráº¡ng thĂ¡i vĂ¡n Ä‘áº¥u vĂ  cĂ¡c Ä‘iá»u kiá»‡n káº¿t thĂºc / hĂ²a
       let status = 'IN_PROGRESS';
       let reason = null;
 
@@ -60,7 +60,7 @@ export class ChessRuleService {
           piece: moveResult.piece,
           captured: moveResult.captured,
           promotion: moveResult.promotion,
-          // Kiểm tra các cờ đặc biệt do chess.js hỗ trợ sẵn
+          // Kiá»ƒm tra cĂ¡c cá» Ä‘áº·c biá»‡t do chess.js há»— trá»£ sáºµn
           isCastling: moveResult.san === 'O-O' || moveResult.san === 'O-O-O',
           isEnPassant: moveResult.flags.includes('e'),
         },
@@ -75,19 +75,19 @@ export class ChessRuleService {
     }
   }
 
-  // Hỗ trợ lưu / khôi phục trạng thái (GAME-015)
+  // Há»— trá»£ lÆ°u / khĂ´i phá»¥c tráº¡ng thĂ¡i (GAME-015)
   getSerializedState(matchId: string): string {
     const game = this.getGame(matchId);
     return game.fen();
   }
 
   restoreState(matchId: string, fen: string): boolean {
-    const game = new Chess();
-    const success = game.load(fen);
-    if (success) {
+    try {
+      const game = new Chess(fen);
       this.games.set(matchId, game);
       return true;
+    } catch {
+      return false;
     }
-    return false;
   }
 }
