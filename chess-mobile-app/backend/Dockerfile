@@ -1,33 +1,28 @@
-# Bước 1: Môi trường Build
-FROM node:20-alpine AS builder
+# Build stage
+FROM node:20-alpine AS build
 
-# Thiết lập thư mục làm việc trong container
-WORKDIR /app
+WORKDIR /usr/src/app
 
-# Copy các file quản lý thư viện vào trước để tận dụng cache
 COPY package*.json ./
+RUN npm ci
 
-# Cài đặt toàn bộ thư viện (bao gồm cả thư viện dev để build code)
-RUN npm install
-
-# Copy toàn bộ mã nguồn dự án vào container
 COPY . .
-
-# Build mã nguồn TypeScript sang JavaScript (lưu vào thư mục dist/)
 RUN npm run build
 
-# Bước 2: Môi trường Chạy (Production)
-FROM node:20-alpine
+# Production stage
+FROM node:20-alpine AS production
 
-WORKDIR /app
+WORKDIR /usr/src/app
 
-# Chỉ copy lại các file thực sự cần thiết từ Bước 1
-COPY --from=builder /app/package*.json ./
-COPY --from=builder /app/node_modules ./node_modules
-COPY --from=builder /app/dist ./dist
+COPY package*.json ./
+RUN npm ci --omit=dev
 
-# Thông báo container sẽ chạy ở cổng 3000
-EXPOSE 3000
+COPY --from=build /usr/src/app/dist ./dist
 
-# Lệnh khởi động server khi container chạy
-CMD ["npm", "run", "start:prod"]
+USER node
+
+# Fly.io requirements for exposing port
+ENV PORT=8080
+EXPOSE 8080
+
+CMD ["node", "dist/main"]

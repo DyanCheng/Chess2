@@ -1,7 +1,8 @@
-import { IsString, IsNotEmpty } from 'class-validator';
-
+// chess-mobile-app/backend/src/game/dto/create-game.dto.ts
 export class CreateGameDto {
-  @IsString()
-  @IsNotEmpty()
-  playerId: string;
+  whitePlayerId: string;
+  blackPlayerId?: string;
+  mode?: 'PVP' | 'BOT';
+  botDifficulty?: 'EASY' | 'MEDIUM' | 'HARD';
+  timeControlSeconds?: number;
 }

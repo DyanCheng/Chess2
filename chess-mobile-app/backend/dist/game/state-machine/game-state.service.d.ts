@@ -1,5 +1,8 @@
 import { GameState } from './game-state.enum';
 export declare class GameStateService {
-    canTransition(currentState: GameState, nextState: GameState): boolean;
-    updateBoardState(currentFen: string, move: string): string;
+    private readonly validTransitions;
+    canTransition(from: GameState, to: GameState): boolean;
+    transition(from: GameState, to: GameState): GameState;
+    isPlayable(state: GameState): boolean;
+    isTerminal(state: GameState): boolean;
 }

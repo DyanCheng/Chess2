@@ -1,30 +1,25 @@
-import { Controller, Post, Get, Param, Body } from '@nestjs/common';
+// chess-mobile-app/backend/src/game/game.controller.ts
+import { Controller, Post, Get, Body, Param } from '@nestjs/common';
 import { GameService } from './game.service';
 import { CreateGameDto } from './dto/create-game.dto';
 import { MoveDto } from './dto/move.dto';
 
-@Controller('matches')
+@Controller('game')
 export class GameController {
   constructor(private readonly gameService: GameService) {}
 
-  // BE-008: Create match
-  @Post()
-  async createMatch(@Body() createGameDto: CreateGameDto) {
-    return this.gameService.createMatch(createGameDto);
+  @Post('create')
+  createGame(@Body() dto: CreateGameDto) {
+    return this.gameService.createGame(dto);
   }
 
-  // BE-009: Get match
-  @Get(':matchId')
-  async getMatch(@Param('matchId') matchId: string) {
-    return this.gameService.getMatch(matchId);
+  @Get(':id')
+  getGame(@Param('id') id: string) {
+    return this.gameService.getGameOrThrow(id);
   }
 
-  // BE-010: Make move API
-  @Post(':matchId/move')
-  async makeMove(
-    @Param('matchId') matchId: string,
-    @Body() moveDto: MoveDto,
-  ) {
-    return this.gameService.makeMove(matchId, moveDto);
+  @Post('move')
+  makeMove(@Body() dto: MoveDto) {
+    return this.gameService.makeMove(dto);
   }
 }

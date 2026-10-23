@@ -1,0 +1,38 @@
+name: Backend CI
+
+on:
+  push:
+    branches: [main, backup_main]
+    paths:
+      - 'chess-mobile-app/backend/**'
+      - '.github/workflows/backend-ci.yml'
+  pull_request:
+    branches: [main, backup_main]
+    paths:
+      - 'chess-mobile-app/backend/**'
+      - '.github/workflows/backend-ci.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: backend-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: chess-mobile-app/backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: chess-mobile-app/backend/package-lock.json
+      - run: npm ci
+      - run: npm run build
+      - run: npm test

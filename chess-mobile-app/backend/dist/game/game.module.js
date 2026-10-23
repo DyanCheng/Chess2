@@ -10,14 +10,16 @@ exports.GameModule = void 0;
 const common_1 = require("@nestjs/common");
 const game_controller_1 = require("./game.controller");
 const game_service_1 = require("./game.service");
-const supabase_service_1 = require("../database/supabase.service");
+const game_gateway_1 = require("./game.gateway");
+const game_state_service_1 = require("./state-machine/game-state.service");
 let GameModule = class GameModule {
 };
 exports.GameModule = GameModule;
 exports.GameModule = GameModule = __decorate([
     (0, common_1.Module)({
         controllers: [game_controller_1.GameController],
-        providers: [game_service_1.GameService, supabase_service_1.SupabaseService],
+        providers: [game_state_service_1.GameStateService, game_service_1.GameService, game_gateway_1.GameGateway],
+        exports: [game_state_service_1.GameStateService, game_service_1.GameService],
     })
 ], GameModule);
 //# sourceMappingURL=game.module.js.map

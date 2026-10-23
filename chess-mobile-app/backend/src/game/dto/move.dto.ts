@@ -1,19 +1,8 @@
-import { IsString, IsNotEmpty, IsOptional } from 'class-validator';
-
+// chess-mobile-app/backend/src/game/dto/move.dto.ts
 export class MoveDto {
-  @IsString()
-  @IsNotEmpty()
+  gameId: string;
   playerId: string;
-
-  @IsString()
-  @IsNotEmpty()
-  from: string; // VD: 'e2'
-
-  @IsString()
-  @IsNotEmpty()
-  to: string;   // VD: 'e4'
-
-  @IsString()
-  @IsOptional()
-  promotion?: string; // Nếu phong cấp (vd: 'q')
+  from: string | { row: number; col: number };
+  to: string | { row: number; col: number };
+  promotion?: 'q' | 'r' | 'b' | 'n';
 }

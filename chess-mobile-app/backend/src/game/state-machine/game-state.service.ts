@@ -1,29 +1,53 @@
+// chess-mobile-app/backend/src/game/state-machine/game-state.service.ts
 import { Injectable, BadRequestException } from '@nestjs/common';
 import { GameState } from './game-state.enum';
 
 @Injectable()
 export class GameStateService {
-  // BE-012: Cấu hình State Machine
-  private allowedTransitions = new Map<GameState, GameState[]>([
-    [GameState.WAITING, [GameState.READY, GameState.CANCELLED]],
-    [GameState.READY, [GameState.PLAYING, GameState.CANCELLED, GameState.DISCONNECTED]],
-    [GameState.PLAYING, [GameState.FINISHED, GameState.DRAW, GameState.DISCONNECTED, GameState.ABANDONED]],
-    [GameState.DISCONNECTED, [GameState.PLAYING, GameState.ABANDONED]],
-    [GameState.FINISHED, []],
-    [GameState.CANCELLED, []],
-    [GameState.ABANDONED, []],
-    [GameState.DRAW, []],
-  ]);
+  // Bảng quy định các bước chuyển trạng thái hợp lệ
+  private readonly validTransitions: Record<GameState, GameState[]> = {
+    [GameState.WAITING]: [GameState.STARTING, GameState.IN_PROGRESS, GameState.ABORTED],
+    [GameState.STARTING]: [GameState.IN_PROGRESS, GameState.ABORTED],
+    [GameState.IN_PROGRESS]: [
+      GameState.CHECK,
+      GameState.PAUSED,
+      GameState.FINISHED,
+      GameState.ABORTED,
+    ],
+    [GameState.CHECK]: [
+      GameState.IN_PROGRESS,
+      GameState.PAUSED,
+      GameState.FINISHED,
+    ],
+    [GameState.PAUSED]: [
+      GameState.IN_PROGRESS,
+      GameState.CHECK,
+      GameState.FINISHED,
+      GameState.ABORTED,
+    ],
+    [GameState.FINISHED]: [],
+    [GameState.ABORTED]: [],
+  };
 
-  canTransition(currentState: GameState, nextState: GameState): boolean {
-    const allowed = this.allowedTransitions.get(currentState);
-    return allowed ? allowed.includes(nextState) : false;
+  canTransition(from: GameState, to: GameState): boolean {
+    if (from === to) return true;
+    return this.validTransitions[from]?.includes(to) ?? false;
   }
 
-  transition(currentState: GameState, nextState: GameState): GameState {
-    if (!this.canTransition(currentState, nextState)) {
-      throw new BadRequestException(`Không thể chuyển trạng thái từ ${currentState} sang ${nextState}`);
+  transition(from: GameState, to: GameState): GameState {
+    if (!this.canTransition(from, to)) {
+      throw new BadRequestException(
+        `Không thể chuyển trạng thái ván đấu từ ${from} sang ${to}`,
+      );
     }
-    return nextState;
+    return to;
+  }
+
+  isPlayable(state: GameState): boolean {
+    return state === GameState.IN_PROGRESS || state === GameState.CHECK;
+  }
+
+  isTerminal(state: GameState): boolean {
+    return state === GameState.FINISHED || state === GameState.ABORTED;
   }
 }
