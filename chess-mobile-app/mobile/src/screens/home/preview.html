@@ -1,0 +1,2056 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Arcane Chess - Home</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      /* Dark Theme */
+      --bg: #08080E;
+      --bg-card: #1A1A2E;
+      --bg-card-light: #242440;
+      --surface: #16162A;
+      --surface-light: #1E1E36;
+      --surface-elevated: #252542;
+
+      --primary: #FFB347;
+      --primary-dark: #E59A30;
+      --primary-light: #FFD080;
+      --secondary: #8B5CF6;
+      --secondary-light: #A78BFA;
+      --accent: #22D3EE;
+      --accent-green: #10B981;
+      --accent-red: #EF4444;
+      --accent-blue: #3B82F6;
+
+      --text-primary: #FFFFFF;
+      --text-secondary: #B8B8D0;
+      --text-muted: #6B6B8A;
+      --text-gold: #FFB347;
+
+      --border: #2A2A4A;
+      --border-light: #3A3A5A;
+
+      --tab-bg: #12121F;
+
+      --shadow-gold: rgba(255, 179, 71, 0.3);
+    }
+
+    .light-theme {
+      --bg: #F5F5F0;
+      --bg-card: #FFFFFF;
+      --bg-card-light: #F8F8F5;
+      --surface: #F0F0EB;
+      --surface-light: #E8E8E3;
+      --surface-elevated: #ECECEC;
+
+      --text-primary: #1A1A2E;
+      --text-secondary: #555566;
+      --text-muted: #8888AA;
+
+      --border: #E0E0D8;
+      --border-light: #D0D0C8;
+
+      --tab-bg: #FFFFFF;
+    }
+
+    /* AI artwork */
+    .avatar { background: url('assets/images/champion_avatar.png') center/cover no-repeat !important; font-size: 0 !important; }
+    .season-banner { background: linear-gradient(rgba(10,5,30,.55), rgba(10,5,30,.55)), url('assets/images/season_banner.png') center/cover no-repeat !important; }
+    .season-banner .season-desc { color: #D1D5DB; }
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      background: #1a1a2e;
+      display: flex;
+      justify-content: center;
+      padding: 20px;
+      min-height: 100vh;
+      gap: 24px;
+      flex-wrap: wrap;
+    }
+
+    .phone-frame {
+      width: 375px;
+      height: 812px;
+      background: var(--bg);
+      border-radius: 40px;
+      overflow: hidden;
+      position: relative;
+      box-shadow: 0 25px 80px rgba(0,0,0,0.5), 0 0 0 2px #333;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .phone-frame.light-theme {
+      box-shadow: 0 25px 80px rgba(0,0,0,0.15), 0 0 0 2px #ccc;
+    }
+
+    /* Scrollable area */
+    .scroll-area {
+      flex: 1;
+      overflow-y: auto;
+      overflow-x: hidden;
+      padding: 0 16px 100px;
+      scrollbar-width: none;
+    }
+    .scroll-area::-webkit-scrollbar { display: none; }
+
+    /* ===== HEADER ===== */
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 52px 16px 12px;
+      background: var(--bg);
+      border-bottom: 1px solid var(--border);
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+    .header-left {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .logo-box {
+      width: 36px;
+      height: 36px;
+      border-radius: 8px;
+      background: var(--bg-card);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid var(--primary);
+      font-size: 20px;
+    }
+    .logo-text {
+      font-size: 16px;
+      font-weight: 800;
+      color: var(--text-primary);
+      letter-spacing: 1.5px;
+    }
+    .header-right {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .level-badge {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      background: var(--bg-card);
+      padding: 4px 8px;
+      border-radius: 999px;
+      border: 1px solid rgba(255,179,71,0.25);
+      font-size: 10px;
+      color: var(--primary);
+      font-weight: 700;
+    }
+    .header-icon-btn {
+      width: 36px;
+      height: 36px;
+      border-radius: 999px;
+      background: var(--bg-card);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 16px;
+      position: relative;
+      cursor: pointer;
+      border: none;
+    }
+    .notif-dot {
+      position: absolute;
+      top: 6px;
+      right: 6px;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--accent-red);
+      border: 1.5px solid var(--bg);
+    }
+
+    /* ===== PROFILE CARD ===== */
+    .profile-card {
+      background: var(--bg-card);
+      border-radius: 20px;
+      padding: 16px;
+      margin: 12px 0 16px;
+      border: 1px solid var(--border);
+      position: relative;
+      overflow: hidden;
+    }
+    .profile-glow {
+      position: absolute;
+      top: -50px;
+      right: -50px;
+      width: 200px;
+      height: 200px;
+      border-radius: 50%;
+      background: var(--primary);
+      opacity: 0.08;
+      animation: pulse-glow 4s ease-in-out infinite;
+    }
+    @keyframes pulse-glow {
+      0%, 100% { opacity: 0.05; }
+      50% { opacity: 0.12; }
+    }
+    .profile-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 16px;
+      position: relative;
+      z-index: 1;
+    }
+    .profile-left {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .avatar-wrap {
+      position: relative;
+    }
+    .avatar {
+      width: 52px;
+      height: 52px;
+      border-radius: 50%;
+      background: var(--secondary);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border: 2px solid var(--primary);
+      font-size: 20px;
+      font-weight: 700;
+      color: white;
+    }
+    .online-dot {
+      position: absolute;
+      bottom: 0;
+      right: 0;
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      background: var(--accent-green);
+      border: 2.5px solid var(--bg-card);
+    }
+    .profile-info { display: flex; flex-direction: column; gap: 4px; }
+    .name-row { display: flex; align-items: center; gap: 4px; }
+    .username {
+      font-size: 16px;
+      font-weight: 700;
+      color: var(--text-primary);
+    }
+    .verified {
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background: rgba(34,211,238,0.15);
+      color: var(--accent);
+      font-size: 11px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+    }
+    .rank-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      background: rgba(255,179,71,0.1);
+      padding: 3px 8px;
+      border-radius: 6px;
+      font-size: 10px;
+      font-weight: 700;
+      color: var(--primary);
+    }
+    .rank-badge .divider {
+      width: 1px;
+      height: 10px;
+      background: rgba(255,179,71,0.3);
+      margin: 0 2px;
+    }
+    .rank-badge .tier { opacity: 0.7; }
+
+    .elo-box {
+      text-align: right;
+    }
+    .elo-label {
+      font-size: 10px;
+      color: var(--text-muted);
+      letter-spacing: 1px;
+      font-weight: 500;
+      margin-bottom: 2px;
+    }
+    .elo-value-row {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      justify-content: flex-end;
+    }
+    .elo-value {
+      font-size: 28px;
+      font-weight: 800;
+      color: var(--primary);
+      line-height: 1;
+    }
+    .elo-trend {
+      font-size: 18px;
+      color: var(--accent-green);
+      font-weight: 700;
+    }
+
+    /* Stats Row */
+    .stats-row {
+      display: flex;
+      align-items: center;
+      background: var(--surface);
+      border-radius: 12px;
+      padding: 12px 8px;
+      position: relative;
+      z-index: 1;
+    }
+    .stat-item {
+      flex: 1;
+      text-align: center;
+    }
+    .stat-label {
+      font-size: 9px;
+      color: var(--text-muted);
+      line-height: 1.3;
+      margin-bottom: 4px;
+    }
+    .stat-value {
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--text-primary);
+    }
+    .stat-divider {
+      width: 1px;
+      height: 30px;
+      background: var(--border);
+    }
+    .streak-badge {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 2px;
+    }
+    .streak-value {
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--accent-red);
+    }
+
+    /* ===== SECTION GENERIC ===== */
+    .section {
+      margin-bottom: 20px;
+    }
+    .section-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 12px;
+      flex-wrap: wrap;
+      gap: 4px;
+    }
+    .section-title-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .section-icon { font-size: 18px; }
+    .section-title {
+      font-size: 16px;
+      font-weight: 700;
+      color: var(--text-primary);
+    }
+    .timer-badge {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      background: var(--surface);
+      padding: 4px 8px;
+      border-radius: 999px;
+      font-size: 10px;
+      color: var(--text-muted);
+    }
+    .see-all-link {
+      font-size: 12px;
+      color: var(--primary);
+      font-weight: 500;
+      cursor: pointer;
+      text-decoration: none;
+    }
+
+    /* ===== MISSIONS ===== */
+    .mission-card {
+      background: var(--bg-card);
+      border-radius: 12px;
+      padding: 12px;
+      margin-bottom: 8px;
+      border: 1px solid var(--border);
+    }
+    .mission-card.completed {
+      border-color: rgba(16,185,129,0.25);
+      background: rgba(16,185,129,0.03);
+    }
+    .mission-content {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .mission-left {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex: 1;
+    }
+    .mission-checkbox {
+      width: 36px;
+      height: 36px;
+      border-radius: 8px;
+      background: var(--surface);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid var(--border);
+      font-size: 10px;
+      color: var(--text-muted);
+      font-weight: 700;
+      flex-shrink: 0;
+    }
+    .mission-checkbox.completed {
+      background: rgba(16,185,129,0.15);
+      border-color: var(--accent-green);
+      color: var(--accent-green);
+      font-size: 16px;
+    }
+    .mission-info { flex: 1; min-width: 0; }
+    .mission-title {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text-primary);
+      margin-bottom: 2px;
+    }
+    .mission-title.completed {
+      text-decoration: line-through;
+      color: var(--text-muted);
+    }
+    .mission-subtitle {
+      font-size: 10px;
+      color: var(--accent-green);
+      margin-top: 2px;
+    }
+    .rewards-row {
+      display: flex;
+      gap: 12px;
+      margin-top: 2px;
+    }
+    .reward-item {
+      display: flex;
+      align-items: center;
+      gap: 3px;
+      font-size: 10px;
+      font-weight: 500;
+    }
+    .reward-icon { font-size: 12px; }
+    .mission-action-btn {
+      padding: 8px 12px;
+      border-radius: 8px;
+      background: var(--surface-elevated);
+      border: 1px solid var(--border);
+      font-size: 10px;
+      font-weight: 600;
+      color: var(--text-secondary);
+      cursor: pointer;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+    .mission-action-btn.completed {
+      background: var(--primary);
+      border-color: var(--primary);
+      color: var(--bg);
+    }
+    .progress-bar-container {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 8px;
+    }
+    .progress-bar-bg {
+      flex: 1;
+      height: 4px;
+      background: var(--surface);
+      border-radius: 2px;
+      overflow: hidden;
+    }
+    .progress-bar-fill {
+      height: 100%;
+      background: var(--primary);
+      border-radius: 2px;
+      transition: width 0.6s ease;
+    }
+    .progress-text {
+      font-size: 9px;
+      color: var(--text-muted);
+      font-weight: 500;
+    }
+
+    /* ===== SEASON BANNER ===== */
+    .season-banner {
+      border-radius: 20px;
+      overflow: hidden;
+      margin-bottom: 16px;
+      padding: 16px;
+      background: linear-gradient(135deg, #1A0A3E 0%, #0D0D14 100%);
+      border: 1px solid rgba(139,92,246,0.25);
+      position: relative;
+    }
+    .season-banner::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: rgba(139,92,246,0.06);
+    }
+    .season-banner-content {
+      position: relative;
+      z-index: 1;
+    }
+    .season-badge-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 12px;
+      flex-wrap: wrap;
+    }
+    .season-badge-text {
+      font-size: 10px;
+      font-weight: 700;
+      color: var(--secondary-light);
+      letter-spacing: 1.5px;
+    }
+    .countdown-badge {
+      background: rgba(239,68,68,0.15);
+      padding: 2px 8px;
+      border-radius: 999px;
+      font-size: 10px;
+      color: var(--accent-red);
+      font-weight: 600;
+    }
+    .season-title {
+      font-size: 22px;
+      font-weight: 800;
+      color: white;
+      margin-bottom: 8px;
+      line-height: 1.2;
+    }
+    .season-desc {
+      font-size: 12px;
+      color: var(--text-secondary);
+      margin-bottom: 16px;
+      line-height: 1.5;
+    }
+    .season-prize-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .prize-tag {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      background: rgba(255,179,71,0.1);
+      padding: 8px 12px;
+      border-radius: 8px;
+      border: 1px solid rgba(255,179,71,0.2);
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--primary);
+    }
+    .join-btn {
+      background: var(--primary);
+      padding: 12px 20px;
+      border-radius: 12px;
+      font-size: 14px;
+      font-weight: 700;
+      color: #08080E;
+      border: none;
+      cursor: pointer;
+      box-shadow: 0 2px 8px var(--shadow-gold);
+      transition: transform 0.2s, box-shadow 0.2s;
+    }
+    .join-btn:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 4px 16px var(--shadow-gold);
+    }
+    .shimmer {
+      position: absolute;
+      top: 0;
+      left: -60px;
+      width: 60px;
+      height: 100%;
+      background: rgba(255,255,255,0.04);
+      transform: skewX(-20deg);
+      animation: shimmer-move 3s infinite;
+    }
+    @keyframes shimmer-move {
+      0% { left: -60px; }
+      100% { left: calc(100% + 60px); }
+    }
+
+    /* ===== ARCANE PASS ===== */
+    .arcane-pass {
+      display: flex;
+      align-items: center;
+      background: var(--bg-card);
+      border-radius: 12px;
+      padding: 12px;
+      margin-bottom: 20px;
+      border: 1px solid var(--border);
+      gap: 8px;
+    }
+    .arcane-pass-left {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      flex-shrink: 0;
+    }
+    .arcane-pass-title {
+      font-size: 10px;
+      font-weight: 600;
+      color: var(--text-secondary);
+      white-space: nowrap;
+    }
+    .arcane-pass-right {
+      flex: 1;
+    }
+    .arcane-pass-bar-bg {
+      height: 6px;
+      background: var(--surface);
+      border-radius: 3px;
+      overflow: hidden;
+      margin-bottom: 4px;
+    }
+    .arcane-pass-bar-fill {
+      height: 100%;
+      background: var(--primary);
+      border-radius: 3px;
+      transition: width 1s ease;
+    }
+    .arcane-pass-xp {
+      font-size: 9px;
+      color: var(--text-muted);
+      text-align: right;
+    }
+    .arcane-pass-level {
+      display: flex;
+      align-items: center;
+      gap: 2px;
+      background: rgba(255,179,71,0.1);
+      padding: 4px 8px;
+      border-radius: 999px;
+      flex-shrink: 0;
+    }
+    .arcane-pass-level-text {
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--primary);
+    }
+
+    /* ===== BATTLE MODES ===== */
+    .online-count-badge {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      background: rgba(16,185,129,0.06);
+      padding: 4px 8px;
+      border-radius: 999px;
+      border: 1px solid rgba(16,185,129,0.2);
+    }
+    .online-dot-sm {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--accent-green);
+      animation: blink 2s infinite;
+    }
+    @keyframes blink {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
+    }
+    .online-count-text {
+      font-size: 9px;
+      color: var(--accent-green);
+      font-weight: 500;
+    }
+
+    .ranked-card {
+      background: var(--bg-card);
+      border-radius: 16px;
+      padding: 16px;
+      margin-bottom: 12px;
+      border: 1px solid var(--border);
+    }
+    .ranked-header { margin-bottom: 16px; }
+    .ranked-title-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 4px;
+    }
+    .ranked-title {
+      font-size: 16px;
+      font-weight: 800;
+      color: var(--text-primary);
+      letter-spacing: 0.5px;
+    }
+    .ranked-badge {
+      background: rgba(255,179,71,0.12);
+      padding: 2px 8px;
+      border-radius: 4px;
+      border: 1px solid rgba(255,179,71,0.25);
+      font-size: 9px;
+      font-weight: 700;
+      color: var(--primary);
+      letter-spacing: 1px;
+    }
+    .ranked-subtitle {
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+
+    .time-control-row {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 16px;
+    }
+    .time-control-btn {
+      flex: 1;
+      padding: 12px 8px;
+      border-radius: 12px;
+      background: var(--surface);
+      text-align: center;
+      border: 1.5px solid transparent;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .time-control-btn.active {
+      background: var(--surface-elevated);
+      border-color: var(--accent);
+    }
+    .time-control-btn.active.gold { border-color: var(--primary); }
+    .time-control-btn.active.red { border-color: var(--accent-red); }
+    .time-control-label {
+      font-size: 10px;
+      font-weight: 700;
+      color: var(--text-muted);
+      letter-spacing: 1px;
+      margin-bottom: 4px;
+    }
+    .time-control-btn.active .time-control-label { color: var(--accent); }
+    .time-control-btn.active.gold .time-control-label { color: var(--primary); }
+    .time-control-btn.active.red .time-control-label { color: var(--accent-red); }
+    .time-control-time {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text-secondary);
+    }
+    .time-control-btn.active .time-control-time { color: var(--text-primary); }
+
+    .find-match-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: var(--primary);
+      padding: 16px;
+      border-radius: 999px;
+      gap: 8px;
+      position: relative;
+      overflow: hidden;
+      border: none;
+      cursor: pointer;
+      width: 100%;
+      box-shadow: 0 2px 8px var(--shadow-gold);
+      transition: transform 0.2s, box-shadow 0.2s;
+    }
+    .find-match-btn:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 4px 16px var(--shadow-gold);
+    }
+    .find-match-btn::before {
+      content: '';
+      position: absolute;
+      top: -20px;
+      left: 30%;
+      width: 100px;
+      height: 100px;
+      border-radius: 50%;
+      background: rgba(255,255,255,0.12);
+    }
+    .find-match-text {
+      font-size: 16px;
+      font-weight: 800;
+      color: #08080E;
+      letter-spacing: 1px;
+      position: relative;
+    }
+
+    /* Mode Cards */
+    .mode-card {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: var(--bg-card);
+      border-radius: 12px;
+      padding: 12px;
+      margin-bottom: 8px;
+      border: 1px solid var(--border);
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    .mode-card:hover {
+      background: var(--bg-card-light);
+    }
+    .mode-card-left {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex: 1;
+      min-width: 0;
+    }
+    .mode-icon-container {
+      width: 42px;
+      height: 42px;
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 20px;
+      flex-shrink: 0;
+    }
+    .mode-name-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .mode-name {
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--text-primary);
+    }
+    .mode-tag {
+      background: rgba(16,185,129,0.1);
+      padding: 1px 8px;
+      border-radius: 4px;
+      font-size: 9px;
+      font-weight: 700;
+      color: var(--accent-green);
+      letter-spacing: 0.5px;
+    }
+    .mode-tag.purple {
+      background: rgba(124,58,237,0.12);
+      color: #A78BFA;
+    }
+    .mode-desc {
+      font-size: 10px;
+      color: var(--text-muted);
+      margin-top: 2px;
+    }
+    .mode-action-btn {
+      padding: 8px 12px;
+      border-radius: 8px;
+      background: rgba(255,179,71,0.1);
+      border: 1px solid rgba(255,179,71,0.2);
+      font-size: 10px;
+      font-weight: 600;
+      color: var(--primary);
+      cursor: pointer;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+    .mode-action-btn.outline {
+      background: transparent;
+      border-color: rgba(107,107,138,0.25);
+      color: var(--text-secondary);
+    }
+    .mode-action-btn.purple {
+      background: rgba(139,92,246,0.1);
+      border-color: rgba(139,92,246,0.2);
+      color: #A78BFA;
+    }
+
+    /* ===== LEADERBOARD ===== */
+    .podium-container {
+      display: flex;
+      justify-content: center;
+      align-items: flex-end;
+      background: var(--bg-card);
+      border-radius: 16px;
+      padding: 32px 12px 0;
+      border: 1px solid var(--border);
+      overflow: hidden;
+    }
+    .podium-item {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    .crown-icon {
+      font-size: 24px;
+      margin-bottom: 4px;
+    }
+    .podium-avatar {
+      width: 48px;
+      height: 48px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 4px;
+      font-size: 16px;
+      font-weight: 700;
+      color: white;
+      border-width: 2.5px;
+      border-style: solid;
+    }
+    .podium-avatar.gold {
+      background: #3A2800;
+      border-color: var(--primary);
+    }
+    .podium-avatar.silver {
+      background: #1A1A2E;
+      border-color: #94A3B8;
+      width: 42px;
+      height: 42px;
+    }
+    .podium-avatar.bronze {
+      background: #2A1A0A;
+      border-color: #CD7F32;
+      width: 42px;
+      height: 42px;
+    }
+    .podium-name {
+      font-size: 10px;
+      color: var(--text-secondary);
+      font-weight: 500;
+      margin-bottom: 4px;
+      text-align: center;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 90px;
+    }
+    .podium-elo {
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--text-primary);
+      margin-bottom: 8px;
+    }
+    .podium-elo.gold {
+      color: var(--primary);
+      font-size: 16px;
+    }
+    .podium-subtext {
+      font-size: 9px;
+      color: var(--text-muted);
+      text-align: center;
+      margin-bottom: 8px;
+      line-height: 1.3;
+    }
+    .podium-base {
+      width: 100%;
+      padding: 12px 0;
+      text-align: center;
+      border-top-left-radius: 8px;
+      border-top-right-radius: 8px;
+      font-size: 22px;
+      font-weight: 800;
+      color: var(--text-muted);
+    }
+    .podium-base.gold {
+      background: rgba(255,179,71,0.15);
+      padding: 20px 0;
+    }
+    .podium-base.silver {
+      background: rgba(148,163,184,0.08);
+      padding: 16px 0;
+    }
+    .podium-base.bronze {
+      background: rgba(205,127,50,0.08);
+      padding: 12px 0;
+    }
+
+    /* Player Rank Card */
+    .player-rank-card {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: var(--bg-card);
+      border-radius: 12px;
+      padding: 16px;
+      margin-top: 12px;
+      border: 1px solid rgba(255,179,71,0.2);
+    }
+    .player-rank-left {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .player-rank-number {
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--text-muted);
+    }
+    .player-rank-avatar {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      background: var(--secondary);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border: 1.5px solid var(--primary);
+      font-size: 14px;
+      font-weight: 700;
+      color: white;
+    }
+    .player-rank-name {
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--text-primary);
+    }
+    .player-rank-tier {
+      font-size: 10px;
+      color: var(--text-muted);
+    }
+    .player-rank-elo {
+      font-size: 16px;
+      font-weight: 800;
+      color: var(--primary);
+    }
+
+    /* ===== MATCH HISTORY ===== */
+    .history-tabs {
+      display: flex;
+    }
+    .history-tab-active {
+      background: rgba(255,179,71,0.1);
+      padding: 4px 12px;
+      border-radius: 999px;
+      border: 1px solid rgba(255,179,71,0.2);
+      font-size: 10px;
+      font-weight: 600;
+      color: var(--primary);
+    }
+    .match-card {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: var(--bg-card);
+      border-radius: 12px;
+      padding: 12px;
+      margin-bottom: 8px;
+      border: 1px solid var(--border);
+    }
+    .match-left {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex: 1;
+      min-width: 0;
+    }
+    .match-result-badge {
+      padding: 4px 8px;
+      border-radius: 4px;
+      min-width: 50px;
+      text-align: center;
+      font-size: 10px;
+      font-weight: 700;
+      flex-shrink: 0;
+    }
+    .match-result-badge.win {
+      background: rgba(16,185,129,0.12);
+      color: var(--accent-green);
+    }
+    .match-result-badge.loss {
+      background: rgba(239,68,68,0.12);
+      color: var(--accent-red);
+    }
+    .match-info { flex: 1; min-width: 0; }
+    .match-opponent {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text-primary);
+      margin-bottom: 2px;
+    }
+    .match-details {
+      font-size: 10px;
+      color: var(--text-muted);
+    }
+    .match-right {
+      text-align: right;
+      flex-shrink: 0;
+    }
+    .match-time {
+      font-size: 10px;
+      color: var(--text-muted);
+      margin-bottom: 4px;
+    }
+    .match-review {
+      font-size: 10px;
+      color: var(--primary);
+      font-weight: 500;
+      cursor: pointer;
+    }
+
+    /* ===== TAB BAR ===== */
+    .tab-bar {
+      display: flex;
+      background: var(--tab-bg);
+      border-top: 1px solid var(--border);
+      padding: 8px 8px 24px;
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      z-index: 100;
+    }
+    .tab-item {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 4px 0;
+      position: relative;
+      cursor: pointer;
+    }
+    .tab-icon {
+      font-size: 20px;
+      margin-bottom: 2px;
+      transition: opacity 0.2s;
+    }
+    .tab-icon.inactive { opacity: 0.5; }
+    .tab-label {
+      font-size: 9px;
+      font-weight: 500;
+    }
+    .tab-label.active { color: var(--primary); }
+    .tab-label.inactive { color: var(--text-muted); }
+    .tab-active-indicator {
+      position: absolute;
+      top: -9px;
+      width: 24px;
+      height: 3px;
+      background: var(--primary);
+      border-radius: 1.5px;
+    }
+
+    /* Theme toggle */
+    .theme-toggle-container {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      z-index: 9999;
+      display: flex;
+      gap: 8px;
+    }
+    .theme-toggle-btn {
+      padding: 8px 16px;
+      border-radius: 8px;
+      border: 1px solid #444;
+      background: #222;
+      color: white;
+      cursor: pointer;
+      font-family: 'Inter', sans-serif;
+      font-weight: 600;
+      font-size: 12px;
+      transition: all 0.2s;
+    }
+    .theme-toggle-btn:hover {
+      background: #333;
+    }
+    .theme-toggle-btn.active {
+      background: var(--primary);
+      color: #08080E;
+      border-color: var(--primary);
+    }
+
+    /* Season banner background image overlay */
+    .season-banner-bg-img {
+      position: absolute;
+      top: 0;
+      right: 0;
+      width: 50%;
+      height: 100%;
+      object-fit: cover;
+      opacity: 0.3;
+      mask-image: linear-gradient(to right, transparent, black);
+      -webkit-mask-image: linear-gradient(to right, transparent, black);
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ===== DARK THEME PHONE ===== -->
+  <div class="phone-frame" id="dark-phone">
+    <!-- Header -->
+    <div class="header">
+      <div class="header-left">
+        <div class="logo-box">♚</div>
+        <span class="logo-text">ARCANE CHESS</span>
+      </div>
+      <div class="header-right">
+        <div class="level-badge">
+          <span>⚡</span>
+          <span>48/50</span>
+        </div>
+        <button class="header-icon-btn" style="animation: pulse-bell 2s infinite;">
+          🔔
+          <div class="notif-dot"></div>
+        </button>
+        <button class="header-icon-btn">⚙️</button>
+      </div>
+    </div>
+
+    <div class="scroll-area">
+      <!-- Profile Card -->
+      <div class="profile-card">
+        <div class="profile-glow"></div>
+        <div class="profile-top">
+          <div class="profile-left">
+            <div class="avatar-wrap">
+              <div class="avatar">V</div>
+              <div class="online-dot"></div>
+            </div>
+            <div class="profile-info">
+              <div class="name-row">
+                <span class="username">VortexGM</span>
+                <span class="verified">✓</span>
+              </div>
+              <div class="rank-badge">
+                <span>👑</span>
+                <span>Master</span>
+                <span class="divider"></span>
+                <span class="tier">Tier</span>
+              </div>
+            </div>
+          </div>
+          <div class="elo-box">
+            <div class="elo-label">ARCANE ELO</div>
+            <div class="elo-value-row">
+              <span class="elo-value">1,450</span>
+              <span class="elo-trend">↗</span>
+            </div>
+          </div>
+        </div>
+        <div class="stats-row">
+          <div class="stat-item">
+            <div class="stat-label">Tỉ Lệ<br>Thắng</div>
+            <div class="stat-value">68.4%</div>
+          </div>
+          <div class="stat-divider"></div>
+          <div class="stat-item">
+            <div class="stat-label">Tổng Trận</div>
+            <div class="stat-value">412</div>
+          </div>
+          <div class="stat-divider"></div>
+          <div class="stat-item">
+            <div class="stat-label">Thắng /<br>Thua</div>
+            <div class="stat-value">282/92</div>
+          </div>
+          <div class="stat-divider"></div>
+          <div class="stat-item">
+            <div class="stat-label">Chuỗi<br>Thắng</div>
+            <div class="streak-badge">
+              <span>🔥</span>
+              <span class="streak-value">5</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Daily Missions -->
+      <div class="section">
+        <div class="section-header">
+          <div class="section-title-row">
+            <span class="section-icon">📋</span>
+            <span class="section-title">Nhiệm Vụ Hàng Ngày</span>
+          </div>
+          <div class="timer-badge">
+            <span>⏰</span>
+            <span>Làm mới sau: 05h 42m</span>
+          </div>
+        </div>
+
+        <!-- Mission 1 -->
+        <div class="mission-card">
+          <div class="mission-content">
+            <div class="mission-left">
+              <div class="mission-checkbox">1/2</div>
+              <div class="mission-info">
+                <div class="mission-title">Chiến thắng 2 trận Rank</div>
+                <div class="rewards-row">
+                  <span class="reward-item"><span class="reward-icon">🪙</span> <span style="color: #FFB347;">+200 Vàng</span></span>
+                  <span class="reward-item"><span class="reward-icon">⭐</span> <span style="color: #22D3EE;">+50 EXP</span></span>
+                </div>
+              </div>
+            </div>
+            <button class="mission-action-btn">Tiếp tục</button>
+          </div>
+          <div class="progress-bar-container">
+            <div class="progress-bar-bg"><div class="progress-bar-fill" style="width: 50%;"></div></div>
+            <span class="progress-text">1/2</span>
+          </div>
+        </div>
+
+        <!-- Mission 2 -->
+        <div class="mission-card">
+          <div class="mission-content">
+            <div class="mission-left">
+              <div class="mission-checkbox">5/10</div>
+              <div class="mission-info">
+                <div class="mission-title">Ăn 10 quân Hậu bất kỳ</div>
+                <div class="rewards-row">
+                  <span class="reward-item"><span class="reward-icon">💎</span> <span style="color: #3B82F6;">+50 Kim Cương</span></span>
+                </div>
+              </div>
+            </div>
+            <button class="mission-action-btn">Vào trận</button>
+          </div>
+          <div class="progress-bar-container">
+            <div class="progress-bar-bg"><div class="progress-bar-fill" style="width: 50%;"></div></div>
+            <span class="progress-text">5/10</span>
+          </div>
+        </div>
+
+        <!-- Mission 3 (Completed) -->
+        <div class="mission-card completed">
+          <div class="mission-content">
+            <div class="mission-left">
+              <div class="mission-checkbox completed">✓</div>
+              <div class="mission-info">
+                <div class="mission-title completed">Giải 3 bài toán thế cờ</div>
+                <div class="mission-subtitle">✨ Hoàn thành mỹ mãn!</div>
+              </div>
+            </div>
+            <button class="mission-action-btn completed">Nhận Thưởng</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Season Banner -->
+      <div class="season-banner">
+        <div class="shimmer"></div>
+        <div class="season-banner-content">
+          <div class="season-badge-row">
+            <span>🏆</span>
+            <span class="season-badge-text">MAJOR ESPORTS EVENT</span>
+            <span class="countdown-badge">Còn 3 ngày</span>
+          </div>
+          <div class="season-title">SEASON 4: SHADOW CROWN<br>MASTERS</div>
+          <div class="season-desc">Tổng giải thưởng $10,000 USD & Bảng cờ Đại Hắc Ám độc quyền</div>
+          <div class="season-prize-row">
+            <div class="prize-tag">
+              <span>💰</span>
+              <span>$10,000 POOL</span>
+            </div>
+            <button class="join-btn">Tham Gia Ngay</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Arcane Pass -->
+      <div class="arcane-pass">
+        <div class="arcane-pass-left">
+          <span>🎫</span>
+          <span class="arcane-pass-title">Arcane Pass Hùng Vũ</span>
+        </div>
+        <div class="arcane-pass-right">
+          <div class="arcane-pass-bar-bg">
+            <div class="arcane-pass-bar-fill" style="width: 82%;"></div>
+          </div>
+          <div class="arcane-pass-xp">820/1000 XP</div>
+        </div>
+        <div class="arcane-pass-level">
+          <span>⭐</span>
+          <span class="arcane-pass-level-text">24</span>
+        </div>
+      </div>
+
+      <!-- Battle Modes -->
+      <div class="section">
+        <div class="section-header">
+          <div class="section-title-row">
+            <span class="section-icon">⚔️</span>
+            <span class="section-title">Chế Độ Chiến Đấu</span>
+          </div>
+          <div class="online-count-badge">
+            <div class="online-dot-sm"></div>
+            <span class="online-count-text">14,892 Đang Trực Tuyến</span>
+          </div>
+        </div>
+
+        <!-- Ranked Card -->
+        <div class="ranked-card">
+          <div class="ranked-header">
+            <div class="ranked-title-row">
+              <span>🏅</span>
+              <span class="ranked-title">ĐẤU XẾP HẠNG</span>
+              <span class="ranked-badge">RANKED</span>
+            </div>
+            <div class="ranked-subtitle">Chiến đấu nâng ELO trên bảng xếp hạng</div>
+          </div>
+
+          <div class="time-control-row">
+            <div class="time-control-btn active gold">
+              <div class="time-control-label">BLITZ</div>
+              <div class="time-control-time">3m | 2s</div>
+            </div>
+            <div class="time-control-btn">
+              <div class="time-control-label">RAPID</div>
+              <div class="time-control-time">10m</div>
+            </div>
+            <div class="time-control-btn">
+              <div class="time-control-label">BULLET</div>
+              <div class="time-control-time">1m</div>
+            </div>
+          </div>
+
+          <button class="find-match-btn">
+            <span style="font-size: 18px; position: relative;">🔍</span>
+            <span class="find-match-text">TÌM TRẬN NGAY</span>
+          </button>
+        </div>
+
+        <!-- Play with AI -->
+        <div class="mode-card">
+          <div class="mode-card-left">
+            <div class="mode-icon-container" style="background: #1A2940;">🤖</div>
+            <div>
+              <div class="mode-name-row">
+                <span class="mode-name">CHƠI VỚI MÁY</span>
+                <span class="mode-tag">AI PvE</span>
+              </div>
+              <div class="mode-desc">Học viên • Kiện tướng • Stockfish</div>
+            </div>
+          </div>
+          <button class="mode-action-btn">Chọn Bot</button>
+        </div>
+
+        <!-- Create Room -->
+        <div class="mode-card">
+          <div class="mode-card-left">
+            <div class="mode-icon-container" style="background: #1A2940;">👥</div>
+            <div>
+              <span class="mode-name">TẠO PHÒNG BẠN BÈ</span>
+              <div class="mode-desc">Giao hữu • Tùy chỉnh • Mời bạn FBE</div>
+            </div>
+          </div>
+          <button class="mode-action-btn outline">Vào phòng bè</button>
+        </div>
+
+        <!-- Variant Mode -->
+        <div class="mode-card">
+          <div class="mode-card-left">
+            <div class="mode-icon-container" style="background: #2A1A40;">✨</div>
+            <div>
+              <div class="mode-name-row">
+                <span class="mode-name">CHẾ ĐỘ BIẾN THỂ</span>
+                <span class="mode-tag purple">MỚI</span>
+              </div>
+              <div class="mode-desc">Cờ đang Mù • Cờ Mash HP...</div>
+            </div>
+          </div>
+          <button class="mode-action-btn purple">Thử ngay nhỉ...</button>
+        </div>
+      </div>
+
+      <!-- Leaderboard -->
+      <div class="section">
+        <div class="section-header">
+          <div class="section-title-row">
+            <span class="section-icon">🏆</span>
+            <span class="section-title">Bảng Xếp Hạng Server</span>
+          </div>
+          <a href="#" class="see-all-link">Xem tất cả ›</a>
+        </div>
+
+        <div class="podium-container">
+          <!-- 2nd -->
+          <div class="podium-item">
+            <div class="podium-avatar silver">L</div>
+            <div class="podium-name">Levy_Storm</div>
+            <div class="podium-elo">2,810</div>
+            <div class="podium-base silver">2</div>
+          </div>
+          <!-- 1st -->
+          <div class="podium-item">
+            <div class="crown-icon">👑</div>
+            <div class="podium-avatar gold">M</div>
+            <div class="podium-name">Magnus_Arc...</div>
+            <div class="podium-elo gold">2,840</div>
+            <div class="podium-subtext">Đương kim Vô<br>địch</div>
+            <div class="podium-base gold">1</div>
+          </div>
+          <!-- 3rd -->
+          <div class="podium-item">
+            <div class="podium-avatar bronze">V</div>
+            <div class="podium-name">VeleyDragon...</div>
+            <div class="podium-elo">2,790</div>
+            <div class="podium-base bronze">3</div>
+          </div>
+        </div>
+
+        <!-- Player Rank -->
+        <div class="player-rank-card">
+          <div class="player-rank-left">
+            <span class="player-rank-number">#142</span>
+            <div class="player-rank-avatar">V</div>
+            <div>
+              <div class="player-rank-name">VortexGM (Bạn)</div>
+              <div class="player-rank-tier">Top 4.5% Server</div>
+            </div>
+          </div>
+          <div>
+            <span class="player-rank-elo">1,450 ELO</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Match History -->
+      <div class="section">
+        <div class="section-header">
+          <div class="section-title-row">
+            <span class="section-icon">📜</span>
+            <span class="section-title">Lịch Sử Trận Đấu</span>
+          </div>
+          <div class="history-tabs">
+            <span class="history-tab-active">3 Trận Gần Nhất</span>
+          </div>
+        </div>
+
+        <!-- Match 1 -->
+        <div class="match-card">
+          <div class="match-left">
+            <div class="match-result-badge win">THẮNG</div>
+            <div class="match-info">
+              <div class="match-opponent">vs. DarkBishop (1420)</div>
+              <div class="match-details">+18 ELO • Chiếu hết • Blitz 3m</div>
+            </div>
+          </div>
+          <div class="match-right">
+            <div class="match-time">25 phút trước</div>
+            <span class="match-review">Xem lại ›</span>
+          </div>
+        </div>
+
+        <!-- Match 2 -->
+        <div class="match-card">
+          <div class="match-left">
+            <div class="match-result-badge win">THẮNG</div>
+            <div class="match-info">
+              <div class="match-opponent">vs. GrandTactician (1445)</div>
+              <div class="match-details">+22 ELO • Hết giờ • Rapid 10m</div>
+            </div>
+          </div>
+          <div class="match-right">
+            <div class="match-time">1 giờ trước</div>
+            <span class="match-review">Xem lại ›</span>
+          </div>
+        </div>
+
+        <!-- Match 3 -->
+        <div class="match-card">
+          <div class="match-left">
+            <div class="match-result-badge loss">THUA</div>
+            <div class="match-info">
+              <div class="match-opponent">vs. KnightRider (1510)</div>
+              <div class="match-details">-14 ELO • Bỏ cuộc • Blitz 3m</div>
+            </div>
+          </div>
+          <div class="match-right">
+            <div class="match-time">Hôm qua</div>
+            <span class="match-review">Xem lại ›</span>
+          </div>
+        </div>
+      </div>
+
+      <div style="height: 30px;"></div>
+    </div>
+
+    <!-- Tab Bar -->
+    <div class="tab-bar">
+      <div class="tab-item">
+        <div class="tab-active-indicator"></div>
+        <span class="tab-icon">🏠</span>
+        <span class="tab-label active">Trang chủ</span>
+      </div>
+      <div class="tab-item">
+        <span class="tab-icon inactive">⚔️</span>
+        <span class="tab-label inactive">Chế độ</span>
+      </div>
+      <div class="tab-item">
+        <span class="tab-icon inactive">🧩</span>
+        <span class="tab-label inactive">Giải đố</span>
+      </div>
+      <div class="tab-item">
+        <span class="tab-icon inactive">🏅</span>
+        <span class="tab-label inactive">Xếp hạng</span>
+      </div>
+      <div class="tab-item">
+        <span class="tab-icon inactive">🛒</span>
+        <span class="tab-label inactive">Cửa hàng</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== LIGHT THEME PHONE ===== -->
+  <div class="phone-frame light-theme" id="light-phone">
+    <!-- Header -->
+    <div class="header">
+      <div class="header-left">
+        <div class="logo-box">♚</div>
+        <span class="logo-text">ARCANE CHESS</span>
+      </div>
+      <div class="header-right">
+        <div class="level-badge">
+          <span>⚡</span>
+          <span>48/50</span>
+        </div>
+        <button class="header-icon-btn">
+          🔔
+          <div class="notif-dot"></div>
+        </button>
+        <button class="header-icon-btn">⚙️</button>
+      </div>
+    </div>
+
+    <div class="scroll-area">
+      <!-- Profile Card -->
+      <div class="profile-card">
+        <div class="profile-glow"></div>
+        <div class="profile-top">
+          <div class="profile-left">
+            <div class="avatar-wrap">
+              <div class="avatar">V</div>
+              <div class="online-dot"></div>
+            </div>
+            <div class="profile-info">
+              <div class="name-row">
+                <span class="username">VortexGM</span>
+                <span class="verified">✓</span>
+              </div>
+              <div class="rank-badge">
+                <span>👑</span>
+                <span>Master</span>
+                <span class="divider"></span>
+                <span class="tier">Tier</span>
+              </div>
+            </div>
+          </div>
+          <div class="elo-box">
+            <div class="elo-label">ARCANE ELO</div>
+            <div class="elo-value-row">
+              <span class="elo-value">1,450</span>
+              <span class="elo-trend">↗</span>
+            </div>
+          </div>
+        </div>
+        <div class="stats-row">
+          <div class="stat-item">
+            <div class="stat-label">Tỉ Lệ<br>Thắng</div>
+            <div class="stat-value">68.4%</div>
+          </div>
+          <div class="stat-divider"></div>
+          <div class="stat-item">
+            <div class="stat-label">Tổng Trận</div>
+            <div class="stat-value">412</div>
+          </div>
+          <div class="stat-divider"></div>
+          <div class="stat-item">
+            <div class="stat-label">Thắng /<br>Thua</div>
+            <div class="stat-value">282/92</div>
+          </div>
+          <div class="stat-divider"></div>
+          <div class="stat-item">
+            <div class="stat-label">Chuỗi<br>Thắng</div>
+            <div class="streak-badge">
+              <span>🔥</span>
+              <span class="streak-value">5</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Daily Missions -->
+      <div class="section">
+        <div class="section-header">
+          <div class="section-title-row">
+            <span class="section-icon">📋</span>
+            <span class="section-title">Nhiệm Vụ Hàng Ngày</span>
+          </div>
+          <div class="timer-badge">
+            <span>⏰</span>
+            <span>Làm mới sau: 05h 42m</span>
+          </div>
+        </div>
+
+        <div class="mission-card">
+          <div class="mission-content">
+            <div class="mission-left">
+              <div class="mission-checkbox">1/2</div>
+              <div class="mission-info">
+                <div class="mission-title">Chiến thắng 2 trận Rank</div>
+                <div class="rewards-row">
+                  <span class="reward-item"><span class="reward-icon">🪙</span> <span style="color: #FFB347;">+200 Vàng</span></span>
+                  <span class="reward-item"><span class="reward-icon">⭐</span> <span style="color: #22D3EE;">+50 EXP</span></span>
+                </div>
+              </div>
+            </div>
+            <button class="mission-action-btn">Tiếp tục</button>
+          </div>
+          <div class="progress-bar-container">
+            <div class="progress-bar-bg"><div class="progress-bar-fill" style="width: 50%;"></div></div>
+            <span class="progress-text">1/2</span>
+          </div>
+        </div>
+
+        <div class="mission-card">
+          <div class="mission-content">
+            <div class="mission-left">
+              <div class="mission-checkbox">5/10</div>
+              <div class="mission-info">
+                <div class="mission-title">Ăn 10 quân Hậu bất kỳ</div>
+                <div class="rewards-row">
+                  <span class="reward-item"><span class="reward-icon">💎</span> <span style="color: #3B82F6;">+50 Kim Cương</span></span>
+                </div>
+              </div>
+            </div>
+            <button class="mission-action-btn">Vào trận</button>
+          </div>
+          <div class="progress-bar-container">
+            <div class="progress-bar-bg"><div class="progress-bar-fill" style="width: 50%;"></div></div>
+            <span class="progress-text">5/10</span>
+          </div>
+        </div>
+
+        <div class="mission-card completed">
+          <div class="mission-content">
+            <div class="mission-left">
+              <div class="mission-checkbox completed">✓</div>
+              <div class="mission-info">
+                <div class="mission-title completed">Giải 3 bài toán thế cờ</div>
+                <div class="mission-subtitle">✨ Hoàn thành mỹ mãn!</div>
+              </div>
+            </div>
+            <button class="mission-action-btn completed">Nhận Thưởng</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Season Banner -->
+      <div class="season-banner">
+        <div class="shimmer"></div>
+        <div class="season-banner-content">
+          <div class="season-badge-row">
+            <span>🏆</span>
+            <span class="season-badge-text">MAJOR ESPORTS EVENT</span>
+            <span class="countdown-badge">Còn 3 ngày</span>
+          </div>
+          <div class="season-title">SEASON 4: SHADOW CROWN<br>MASTERS</div>
+          <div class="season-desc">Tổng giải thưởng $10,000 USD & Bảng cờ Đại Hắc Ám độc quyền</div>
+          <div class="season-prize-row">
+            <div class="prize-tag">
+              <span>💰</span>
+              <span>$10,000 POOL</span>
+            </div>
+            <button class="join-btn">Tham Gia Ngay</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Arcane Pass -->
+      <div class="arcane-pass">
+        <div class="arcane-pass-left">
+          <span>🎫</span>
+          <span class="arcane-pass-title">Arcane Pass Hùng Vũ</span>
+        </div>
+        <div class="arcane-pass-right">
+          <div class="arcane-pass-bar-bg">
+            <div class="arcane-pass-bar-fill" style="width: 82%;"></div>
+          </div>
+          <div class="arcane-pass-xp">820/1000 XP</div>
+        </div>
+        <div class="arcane-pass-level">
+          <span>⭐</span>
+          <span class="arcane-pass-level-text">24</span>
+        </div>
+      </div>
+
+      <!-- Battle Modes -->
+      <div class="section">
+        <div class="section-header">
+          <div class="section-title-row">
+            <span class="section-icon">⚔️</span>
+            <span class="section-title">Chế Độ Chiến Đấu</span>
+          </div>
+          <div class="online-count-badge">
+            <div class="online-dot-sm"></div>
+            <span class="online-count-text">14,892 Đang Trực Tuyến</span>
+          </div>
+        </div>
+
+        <div class="ranked-card">
+          <div class="ranked-header">
+            <div class="ranked-title-row">
+              <span>🏅</span>
+              <span class="ranked-title">ĐẤU XẾP HẠNG</span>
+              <span class="ranked-badge">RANKED</span>
+            </div>
+            <div class="ranked-subtitle">Chiến đấu nâng ELO trên bảng xếp hạng</div>
+          </div>
+
+          <div class="time-control-row">
+            <div class="time-control-btn active gold">
+              <div class="time-control-label">BLITZ</div>
+              <div class="time-control-time">3m | 2s</div>
+            </div>
+            <div class="time-control-btn">
+              <div class="time-control-label">RAPID</div>
+              <div class="time-control-time">10m</div>
+            </div>
+            <div class="time-control-btn">
+              <div class="time-control-label">BULLET</div>
+              <div class="time-control-time">1m</div>
+            </div>
+          </div>
+
+          <button class="find-match-btn">
+            <span style="font-size: 18px; position: relative;">🔍</span>
+            <span class="find-match-text">TÌM TRẬN NGAY</span>
+          </button>
+        </div>
+
+        <div class="mode-card">
+          <div class="mode-card-left">
+            <div class="mode-icon-container" style="background: #E8F0F8;">🤖</div>
+            <div>
+              <div class="mode-name-row">
+                <span class="mode-name">CHƠI VỚI MÁY</span>
+                <span class="mode-tag">AI PvE</span>
+              </div>
+              <div class="mode-desc">Học viên • Kiện tướng • Stockfish</div>
+            </div>
+          </div>
+          <button class="mode-action-btn">Chọn Bot</button>
+        </div>
+
+        <div class="mode-card">
+          <div class="mode-card-left">
+            <div class="mode-icon-container" style="background: #E8F0F8;">👥</div>
+            <div>
+              <span class="mode-name">TẠO PHÒNG BẠN BÈ</span>
+              <div class="mode-desc">Giao hữu • Tùy chỉnh • Mời bạn FBE</div>
+            </div>
+          </div>
+          <button class="mode-action-btn outline">Vào phòng bè</button>
+        </div>
+
+        <div class="mode-card">
+          <div class="mode-card-left">
+            <div class="mode-icon-container" style="background: #F0E8F8;">✨</div>
+            <div>
+              <div class="mode-name-row">
+                <span class="mode-name">CHẾ ĐỘ BIẾN THỂ</span>
+                <span class="mode-tag purple">MỚI</span>
+              </div>
+              <div class="mode-desc">Cờ đang Mù • Cờ Mash HP...</div>
+            </div>
+          </div>
+          <button class="mode-action-btn purple">Thử ngay nhỉ...</button>
+        </div>
+      </div>
+
+      <!-- Leaderboard -->
+      <div class="section">
+        <div class="section-header">
+          <div class="section-title-row">
+            <span class="section-icon">🏆</span>
+            <span class="section-title">Bảng Xếp Hạng Server</span>
+          </div>
+          <a href="#" class="see-all-link">Xem tất cả ›</a>
+        </div>
+
+        <div class="podium-container">
+          <div class="podium-item">
+            <div class="podium-avatar silver">L</div>
+            <div class="podium-name">Levy_Storm</div>
+            <div class="podium-elo">2,810</div>
+            <div class="podium-base silver">2</div>
+          </div>
+          <div class="podium-item">
+            <div class="crown-icon">👑</div>
+            <div class="podium-avatar gold">M</div>
+            <div class="podium-name">Magnus_Arc...</div>
+            <div class="podium-elo gold">2,840</div>
+            <div class="podium-subtext">Đương kim Vô<br>địch</div>
+            <div class="podium-base gold">1</div>
+          </div>
+          <div class="podium-item">
+            <div class="podium-avatar bronze">V</div>
+            <div class="podium-name">VeleyDragon...</div>
+            <div class="podium-elo">2,790</div>
+            <div class="podium-base bronze">3</div>
+          </div>
+        </div>
+
+        <div class="player-rank-card">
+          <div class="player-rank-left">
+            <span class="player-rank-number">#142</span>
+            <div class="player-rank-avatar">V</div>
+            <div>
+              <div class="player-rank-name">VortexGM (Bạn)</div>
+              <div class="player-rank-tier">Top 4.5% Server</div>
+            </div>
+          </div>
+          <div>
+            <span class="player-rank-elo">1,450 ELO</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Match History -->
+      <div class="section">
+        <div class="section-header">
+          <div class="section-title-row">
+            <span class="section-icon">📜</span>
+            <span class="section-title">Lịch Sử Trận Đấu</span>
+          </div>
+          <div class="history-tabs">
+            <span class="history-tab-active">3 Trận Gần Nhất</span>
+          </div>
+        </div>
+
+        <div class="match-card">
+          <div class="match-left">
+            <div class="match-result-badge win">THẮNG</div>
+            <div class="match-info">
+              <div class="match-opponent">vs. DarkBishop (1420)</div>
+              <div class="match-details">+18 ELO • Chiếu hết • Blitz 3m</div>
+            </div>
+          </div>
+          <div class="match-right">
+            <div class="match-time">25 phút trước</div>
+            <span class="match-review">Xem lại ›</span>
+          </div>
+        </div>
+
+        <div class="match-card">
+          <div class="match-left">
+            <div class="match-result-badge win">THẮNG</div>
+            <div class="match-info">
+              <div class="match-opponent">vs. GrandTactician (1445)</div>
+              <div class="match-details">+22 ELO • Hết giờ • Rapid 10m</div>
+            </div>
+          </div>
+          <div class="match-right">
+            <div class="match-time">1 giờ trước</div>
+            <span class="match-review">Xem lại ›</span>
+          </div>
+        </div>
+
+        <div class="match-card">
+          <div class="match-left">
+            <div class="match-result-badge loss">THUA</div>
+            <div class="match-info">
+              <div class="match-opponent">vs. KnightRider (1510)</div>
+              <div class="match-details">-14 ELO • Bỏ cuộc • Blitz 3m</div>
+            </div>
+          </div>
+          <div class="match-right">
+            <div class="match-time">Hôm qua</div>
+            <span class="match-review">Xem lại ›</span>
+          </div>
+        </div>
+      </div>
+
+      <div style="height: 30px;"></div>
+    </div>
+
+    <!-- Tab Bar -->
+    <div class="tab-bar">
+      <div class="tab-item">
+        <div class="tab-active-indicator"></div>
+        <span class="tab-icon">🏠</span>
+        <span class="tab-label active">Trang chủ</span>
+      </div>
+      <div class="tab-item">
+        <span class="tab-icon inactive">⚔️</span>
+        <span class="tab-label inactive">Chế độ</span>
+      </div>
+      <div class="tab-item">
+        <span class="tab-icon inactive">🧩</span>
+        <span class="tab-label inactive">Giải đố</span>
+      </div>
+      <div class="tab-item">
+        <span class="tab-icon inactive">🏅</span>
+        <span class="tab-label inactive">Xếp hạng</span>
+      </div>
+      <div class="tab-item">
+        <span class="tab-icon inactive">🛒</span>
+        <span class="tab-label inactive">Cửa hàng</span>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Make time controls interactive
+    document.querySelectorAll('.time-control-row').forEach(row => {
+      row.querySelectorAll('.time-control-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          row.querySelectorAll('.time-control-btn').forEach(b => {
+            b.classList.remove('active', 'gold', 'red');
+          });
+          const label = btn.querySelector('.time-control-label').textContent;
+          btn.classList.add('active');
+          if (label === 'BLITZ') btn.classList.add('gold');
+          if (label === 'BULLET') btn.classList.add('red');
+        });
+      });
+    });
+
+    // Make tabs interactive
+    document.querySelectorAll('.tab-bar').forEach(bar => {
+      bar.querySelectorAll('.tab-item').forEach(tab => {
+        tab.addEventListener('click', () => {
+          bar.querySelectorAll('.tab-item').forEach(t => {
+            const ind = t.querySelector('.tab-active-indicator');
+            if (ind) ind.remove();
+            t.querySelector('.tab-icon').classList.add('inactive');
+            t.querySelector('.tab-label').classList.remove('active');
+            t.querySelector('.tab-label').classList.add('inactive');
+          });
+          tab.querySelector('.tab-icon').classList.remove('inactive');
+          tab.querySelector('.tab-label').classList.remove('inactive');
+          tab.querySelector('.tab-label').classList.add('active');
+          const indicator = document.createElement('div');
+          indicator.className = 'tab-active-indicator';
+          tab.prepend(indicator);
+        });
+      });
+    });
+  </script>
+</body>
+</html>
