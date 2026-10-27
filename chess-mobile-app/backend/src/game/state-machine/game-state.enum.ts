@@ -12,10 +12,11 @@ export enum GameEndReason {
   CHECKMATE = 'CHECKMATE',
   STALEMATE = 'STALEMATE',
   DRAW = 'DRAW',
-  // Thêm 3 dòng dưới đây vào
+  HP = 'HP',
+  HP_DEPLETED = 'HP_DEPLETED',
   RESIGN = 'RESIGN',
   TIMEOUT = 'TIMEOUT',
-  DISCONNECT_TIMEOUT = 'DISCONNECT_TIMEOUT'
+  DISCONNECT_TIMEOUT = 'DISCONNECT_TIMEOUT',
 }
 
 export enum GameSocketEvent {
