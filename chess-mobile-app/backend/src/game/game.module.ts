@@ -4,10 +4,11 @@ import { GameController } from './game.controller';
 import { GameService } from './game.service';
 import { GameGateway } from './game.gateway';
 import { GameStateService } from './state-machine/game-state.service';
+import { ChessRuleService } from './rules/chess-rule.service';
 
 @Module({
   controllers: [GameController],
-  providers: [GameStateService, GameService, GameGateway],
+  providers: [GameStateService, ChessRuleService, GameService, GameGateway],
   exports: [GameStateService, GameService],
 })
 export class GameModule {}
