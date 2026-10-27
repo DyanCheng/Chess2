@@ -5,11 +5,11 @@ import {
   OnModuleDestroy,
 } from '@nestjs/common';
 // Xóa import Position, PieceType bị lỗi. Tạm dùng import class Game
-import { ChessGame } from './engine/game';
 import { GameState, GameEndReason } from './state-machine/game-state.enum';
 import { GameStateService } from './state-machine/game-state.service';
 import { CreateGameDto } from './dto/create-game.dto';
 import { MoveDto } from './dto/move.dto';
+import { ChessRuleService } from './rules/chess-rule.service';
 
 export interface PlayerConnectionState {
   playerId: string;
@@ -20,7 +20,6 @@ export interface PlayerConnectionState {
 
 export interface ServerGameSession {
   id: string;
-  engine: any; // Dùng 'any' để bypass toàn bộ lỗi đỏ check type của engine
   state: GameState;
   whitePlayerId: string;
   blackPlayerId: string;
@@ -45,7 +44,10 @@ export class GameService implements OnModuleDestroy {
   private static readonly DEFAULT_INITIAL_TIME_MS = 5 * 60 * 1000;
   private static readonly DEFAULT_RECONNECT_TIMEOUT_MS = 30 * 1000;
 
-  constructor(private readonly gameStateService: GameStateService) {}
+  constructor(
+    private readonly gameStateService: GameStateService,
+    private readonly chessRuleService: ChessRuleService,
+  ) {}
 
   onModuleDestroy() {
     for (const timer of this.disconnectTimers.values()) {
@@ -65,9 +67,6 @@ export class GameService implements OnModuleDestroy {
     const now = Date.now();
     const session: ServerGameSession = {
       id,
-      // Lưu ý: Nếu chữ Game dưới đây vẫn bị đỏ, hãy mở file 'backend/src/game/engine/game.ts' 
-      // xem tên thật của class là gì (VD: export class ChessBoard) rồi sửa chữ Game thành chữ đó.
-      engine: new ChessGame(), 
       state: this.gameStateService.transition(
         GameState.WAITING,
         GameState.IN_PROGRESS,
@@ -97,6 +96,7 @@ export class GameService implements OnModuleDestroy {
     };
 
     this.games.set(id, session);
+    this.chessRuleService.getGame(id);
     return this.serializeGameState(session);
   }
 
@@ -119,7 +119,7 @@ export class GameService implements OnModuleDestroy {
       return this.serializeGameState(session);
     }
 
-    const currentTurn = session.engine.turn;
+    const currentTurn = this.chessRuleService.getGame(gameId).turn();
     const expectedPlayerId =
       currentTurn === 'w' ? session.whitePlayerId : session.blackPlayerId;
 
@@ -127,21 +127,20 @@ export class GameService implements OnModuleDestroy {
       throw new BadRequestException('Not your turn');
     }
 
-    // Ép kiểu as any để gọi hàm move mà không bị bắt lỗi tham số
-    const moved = (session.engine as any).move(
-      dto.from,
-      dto.to,
-      dto.promotion || 'q',
+    const moved = this.chessRuleService.validateAndApply(
+      gameId,
+      this.toSquare(dto.from),
+      this.toSquare(dto.to),
+      dto.promotion,
     );
-
-    if (!moved) {
-      throw new BadRequestException('Invalid chess move');
+    if (moved.success === false) {
+      throw new BadRequestException(moved.message);
     }
 
     session.lastTurnTimestamp = Date.now();
     session.updatedAt = Date.now();
 
-    if (session.engine.status === 'checkmate') {
+    if (moved.status === 'CHECKMATE') {
       session.state = this.gameStateService.transition(
         session.state,
         GameState.FINISHED,
@@ -149,13 +148,16 @@ export class GameService implements OnModuleDestroy {
       session.winner = currentTurn;
       session.endReason = GameEndReason.CHECKMATE;
       this.clearDisconnectTimersForGame(gameId);
-    } else if (session.engine.status === 'stalemate') {
+    } else if (moved.status === 'DRAW') {
       session.state = this.gameStateService.transition(
         session.state,
         GameState.FINISHED,
       );
       session.winner = 'draw';
-      session.endReason = GameEndReason.STALEMATE;
+      session.endReason =
+        moved.reason === 'STALEMATE'
+          ? GameEndReason.STALEMATE
+          : GameEndReason.DRAW;
       this.clearDisconnectTimersForGame(gameId);
     }
 
@@ -304,7 +306,7 @@ export class GameService implements OnModuleDestroy {
     const elapsed = Math.max(0, now - session.lastTurnTimestamp);
     session.lastTurnTimestamp = now;
 
-    if (session.engine.turn === 'w') {
+    if (this.chessRuleService.getGame(session.id).turn() === 'w') {
       session.whiteTimeMs = Math.max(0, session.whiteTimeMs - elapsed);
       if (session.whiteTimeMs <= 0) {
         session.state = this.gameStateService.transition(
@@ -358,15 +360,16 @@ export class GameService implements OnModuleDestroy {
   }
 
   private serializeGameState(session: ServerGameSession) {
+    const chess = this.chessRuleService.getGame(session.id);
     return {
       id: session.id,
       gameId: session.id,
       state: session.state,
-      // Thêm ?. (optional chaining) để không văng lỗi nếu engine viết thiếu thuộc tính
-      board: session.engine?.board?.grid,
-      turn: session.engine?.turn,
-      engineStatus: session.engine?.status,
-      moveHistory: session.engine?.moveHistory,
+      board: chess.board(),
+      fen: chess.fen(),
+      turn: chess.turn(),
+      engineStatus: chess.isGameOver() ? 'finished' : 'in_progress',
+      moveHistory: chess.history({ verbose: true }),
       whitePlayerId: session.whitePlayerId,
       blackPlayerId: session.blackPlayerId,
       whiteTimeMs: session.whiteTimeMs,
@@ -376,5 +379,27 @@ export class GameService implements OnModuleDestroy {
       endReason: session.endReason,
       updatedAt: session.updatedAt,
     };
+  }
+
+  private toSquare(position: MoveDto['from']): string {
+    if (typeof position === 'string') {
+      if (!/^[a-h][1-8]$/.test(position)) {
+        throw new BadRequestException('Invalid chess square');
+      }
+      return position;
+    }
+
+    if (
+      !Number.isInteger(position.row) ||
+      !Number.isInteger(position.col) ||
+      position.row < 0 ||
+      position.row > 7 ||
+      position.col < 0 ||
+      position.col > 7
+    ) {
+      throw new BadRequestException('Invalid board position');
+    }
+
+    return `${String.fromCharCode(97 + position.col)}${8 - position.row}`;
   }
 }
