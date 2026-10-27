@@ -24,4 +24,7 @@ export type RootStackParamList = {
   GamePvP: undefined;
   GamePvE: { botId: string };
   Matchmaking: undefined;
+  ArcaneModes: undefined;
+  ArcanePuzzle: undefined;
+  ArcaneRanking: undefined;
 };

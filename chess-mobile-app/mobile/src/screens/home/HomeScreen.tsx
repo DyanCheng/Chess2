@@ -68,6 +68,13 @@ export const HomeScreen: React.FC = () => {
             size="large"
             fullWidth
           />
+          <GradientButton
+            title="Khám phá chế độ Arcane"
+            onPress={() => navigation.navigate('ArcaneModes')}
+            icon="✨"
+            size="large"
+            fullWidth
+          />
         </View>
 
         {/* Stats Summary */}
