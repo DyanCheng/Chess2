@@ -170,9 +170,9 @@ export const GameScreen: React.FC = () => {
         winner={gameResult?.winner || null}
         reason={gameResult?.reason || ''}
         playerColor={playerColor}
-        goldEarned={gameResult?.winner === playerColor ? 30 : 5}
-        xpEarned={gameResult?.winner === playerColor ? 25 : 10}
-        ratingChange={gameResult?.winner === playerColor ? 15 : -12}
+        goldEarned={gameResult?.winner === playerColor ? botInfo?.reward.gold || 0 : 0}
+        xpEarned={gameResult?.winner === playerColor ? botInfo?.reward.experience || 0 : 0}
+        ratingChange={0}
         onPlayAgain={handlePlayAgain}
         onGoHome={handleGoHome}
       />

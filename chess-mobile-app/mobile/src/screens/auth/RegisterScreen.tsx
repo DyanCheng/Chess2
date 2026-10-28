@@ -5,7 +5,7 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { COLORS, SPACING, BORDER_RADIUS, FONT_SIZES, FONT_WEIGHTS } from '../../constants/theme';
 import { GradientButton } from '../../components/common/GradientButton';
 
-import { authApi } from '../../services/api';
+import { useAuthStore } from '../../store/authStore';
 
 export const RegisterScreen = () => {
   const navigation = useNavigation<NativeStackNavigationProp<any>>();
@@ -14,6 +14,7 @@ export const RegisterScreen = () => {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const register = useAuthStore(state => state.register);
 
   const handleRegister = async () => {
     if (!username || !email || !password || !confirmPassword) {
@@ -26,10 +27,14 @@ export const RegisterScreen = () => {
     }
     try {
       setLoading(true);
-      await authApi.register({ username, email, password });
-      Alert.alert('Thành công', 'Đăng ký thành công!', [
-        { text: 'OK', onPress: () => navigation.navigate('Login') }
-      ]);
+      const confirmationRequired = await register(email, password, username);
+      if (confirmationRequired) {
+        Alert.alert('Kiểm tra email', 'Xác nhận email trước khi đăng nhập.', [
+          { text: 'OK', onPress: () => navigation.navigate('Login') }
+        ]);
+      } else {
+        navigation.navigate('MainTabs', { screen: 'Profile' });
+      }
     } catch (err: any) {
       Alert.alert('Lỗi', err.message || 'Đăng ký thất bại');
     } finally {

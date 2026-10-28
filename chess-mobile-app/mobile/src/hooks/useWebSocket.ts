@@ -4,15 +4,17 @@
 
 import { useEffect, useCallback, useRef, useState } from 'react';
 import { wsService, WS_EVENTS } from '../services/websocket/wsService';
+import { apiService } from '../services/api/apiService';
 import { useAuthStore } from '../store/authStore';
 
 export function useWebSocket() {
   const [isConnected, setIsConnected] = useState(false);
-  const { token } = useAuthStore();
+  const isAuthenticated = useAuthStore(state => state.isAuthenticated);
+  const token = apiService.getToken();
   const listenersRef = useRef<(() => void)[]>([]);
 
   useEffect(() => {
-    if (token) {
+    if (isAuthenticated && token) {
       wsService.connect(token)
         .then(() => setIsConnected(true))
         .catch(() => setIsConnected(false));
@@ -23,7 +25,7 @@ export function useWebSocket() {
       listenersRef.current.forEach(unsub => unsub());
       listenersRef.current = [];
     };
-  }, [token]);
+  }, [isAuthenticated, token]);
 
   const subscribe = useCallback((event: string, callback: (data: any) => void) => {
     const unsub = wsService.on(event, callback);

@@ -3,6 +3,8 @@
 // ============================================================
 
 import { create } from 'zustand';
+import { createJSONStorage, persist } from 'zustand/middleware';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { PlayerProfile, PlayerStats, PlayerCurrency } from '../types/player';
 import { LEVEL_XP_TABLE } from '../constants/game';
 
@@ -16,6 +18,7 @@ interface PlayerStore {
   setStats: (stats: PlayerStats) => void;
   addGold: (amount: number) => void;
   addGems: (amount: number) => void;
+  setCurrency: (gold: number, gems: number) => void;
   spendGold: (amount: number) => boolean;
   spendGems: (amount: number) => boolean;
   addExperience: (amount: number) => void;
@@ -25,34 +28,34 @@ interface PlayerStore {
   recordDraw: () => void;
 }
 
-export const usePlayerStore = create<PlayerStore>()((set, get) => ({
+export const usePlayerStore = create<PlayerStore>()(persist((set, get) => ({
   profile: {
     id: 'player_1',
-    username: 'Knight_Master',
+    username: 'Khách',
     avatarUrl: '',
-    level: 5,
-    experience: 380,
-    experienceToNextLevel: 700,
-    rating: 1050,
-    gold: 1250,
-    gems: 85,
+    level: 1,
+    experience: 0,
+    experienceToNextLevel: 100,
+    rating: 1000,
+    gold: 0,
+    gems: 0,
     maxHP: 40,
     currentHP: 40,
-    wins: 24,
-    losses: 12,
-    draws: 3,
-    createdAt: '2024-01-01',
+    wins: 0,
+    losses: 0,
+    draws: 0,
+    createdAt: new Date().toISOString(),
     lastOnline: new Date().toISOString(),
   },
   stats: {
-    totalGames: 39,
-    winRate: 61.5,
-    avgGameDuration: 480,
-    longestWinStreak: 7,
-    currentWinStreak: 3,
-    favoriteOpening: 'Sicilian Defense',
-    totalCardsUsed: 45,
-    totalPiecesCaptured: 312,
+    totalGames: 0,
+    winRate: 0,
+    avgGameDuration: 0,
+    longestWinStreak: 0,
+    currentWinStreak: 0,
+    favoriteOpening: '',
+    totalCardsUsed: 0,
+    totalPiecesCaptured: 0,
   },
   isLoading: false,
 
@@ -73,6 +76,16 @@ export const usePlayerStore = create<PlayerStore>()((set, get) => ({
       profile: state.profile ? {
         ...state.profile,
         gems: state.profile.gems + amount,
+      } : null,
+    }));
+  },
+
+  setCurrency: (gold, gems) => {
+    set(state => ({
+      profile: state.profile ? {
+        ...state.profile,
+        gold: Math.max(0, gold),
+        gems: Math.max(0, gems),
       } : null,
     }));
   },
@@ -158,4 +171,7 @@ export const usePlayerStore = create<PlayerStore>()((set, get) => ({
       } : null,
     }));
   },
+}), {
+  name: 'arcane-guest-profile-v1',
+  storage: createJSONStorage(() => AsyncStorage),
 }));

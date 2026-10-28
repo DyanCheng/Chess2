@@ -108,7 +108,7 @@ const TitleBar = () => {
 // RANKED CARD
 // ============================================================
 const RankedCard = () => {
-  const { styles, colors } = useTheme();
+  const { styles, colors, onNavigate } = useTheme();
   const [selected, setSelected] = useState('blitz');
 
   return (
@@ -172,7 +172,7 @@ const RankedCard = () => {
         <Text style={styles.liveText}>Dự kiến: ~15s</Text>
       </View>
 
-      <TouchableOpacity style={styles.findBtn} activeOpacity={0.85}>
+      <TouchableOpacity style={styles.findBtn} activeOpacity={0.85} onPress={() => onNavigate?.('matchmaking')}>
         <Text style={styles.findText}>⚔️  TÌM TRẬN NGAY  ›</Text>
       </TouchableOpacity>
     </View>
@@ -218,7 +218,7 @@ const VariantsSection = () => {
 // PRACTICE & FRIENDS
 // ============================================================
 const PracticeSection = () => {
-  const { styles, colors } = useTheme();
+  const { styles, colors, onNavigate } = useTheme();
   const [bot, setBot] = useState(3);
   const [spectator, setSpectator] = useState(true);
 
@@ -259,7 +259,7 @@ const PracticeSection = () => {
           })}
         </View>
 
-        <TouchableOpacity style={styles.botBtn}>
+        <TouchableOpacity style={styles.botBtn} onPress={() => onNavigate?.(`bot:${bot}`)}>
           <Text style={styles.botBtnText}>⚙️  CHỌN CẤP ĐỘ & VÀO ĐẤU</Text>
         </TouchableOpacity>
       </View>

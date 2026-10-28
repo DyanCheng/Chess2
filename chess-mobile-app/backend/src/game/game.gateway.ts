@@ -15,14 +15,12 @@ export class GameGateway implements OnGatewayDisconnect {
   @WebSocketServer()
   server: Server;
 
-  private readonly socketPlayerMap = new Map<string, string>();
-
   constructor(private readonly gameService: GameService) {}
 
   handleDisconnect(client: Socket) {
-    const playerId = this.socketPlayerMap.get(client.id) || client.id;
-    this.gameService.handleDisconnect(playerId, this.server);
-    this.socketPlayerMap.delete(client.id);
+    if (client.data.userId) {
+      this.gameService.handleDisconnect(client.data.userId, this.server);
+    }
   }
 
   @SubscribeMessage('game:create_bot')
@@ -30,13 +28,11 @@ export class GameGateway implements OnGatewayDisconnect {
     @ConnectedSocket() client: Socket,
     @MessageBody()
     payload: {
-      playerId?: string;
       difficulty?: 'EASY' | 'MEDIUM' | 'easy' | 'medium';
       initialHp?: number;
     },
   ) {
-    const playerId = payload?.playerId || client.id;
-    this.socketPlayerMap.set(client.id, playerId);
+    const playerId = client.data.userId;
     const session = this.gameService.createBotGame(
       playerId,
       payload?.difficulty || 'EASY',
@@ -51,61 +47,76 @@ export class GameGateway implements OnGatewayDisconnect {
   @SubscribeMessage('game:join')
   handleJoinGame(
     @ConnectedSocket() client: Socket,
-    @MessageBody() payload: { gameId: string; playerId: string },
+    @MessageBody() payload: { gameId: string },
   ) {
-    this.socketPlayerMap.set(client.id, payload.playerId);
+    const playerId = client.data.userId;
     client.join(payload.gameId);
-    this.gameService.handleReconnect(payload.playerId, this.server);
-    const session = this.gameService.joinGame(payload.gameId, payload.playerId);
+    this.gameService.handleReconnect(playerId, this.server);
+    const session = this.gameService.joinGame(payload.gameId, playerId);
     const serialized = this.gameService.serializeGame(session);
     this.server.to(payload.gameId).emit('game:state', serialized);
+    this.server.to(payload.gameId).emit('game:updated', serialized);
     return { event: 'game:joined', data: serialized };
   }
 
   @SubscribeMessage('game:move')
-  handleMove(
+  async handleMove(
     @ConnectedSocket() client: Socket,
-    @MessageBody() dto: MoveDto,
+    @MessageBody() payload: MoveDto | { gameId: string; move: Omit<MoveDto, 'playerId'> },
   ) {
-    const result = this.gameService.makeMove(dto, this.server);
+    const nested = 'move' in payload ? payload.move : payload;
+    const gameId = payload.gameId || nested.gameId;
+    const result = this.gameService.makeMove({
+      ...nested,
+      gameId,
+      playerId: client.data.userId,
+    }, this.server);
+    await this.gameService.flushGame(gameId);
+    this.server.to(gameId).emit('game:updated', result);
     return { event: 'game:move_ack', data: result };
   }
 
   @SubscribeMessage('game:bot_move')
   handleBotMove(
+    @ConnectedSocket() client: Socket,
     @MessageBody() payload: { gameId: string },
   ) {
+    this.gameService.getGameStateForPlayer(payload.gameId, client.data.userId);
     const result = this.gameService.makeBotMove(payload.gameId, this.server);
     return { event: 'game:bot_move_ack', data: result };
   }
 
   @SubscribeMessage('game:resign')
-  handleResign(
-    @MessageBody() payload: { gameId: string; playerId: string },
+  async handleResign(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() payload: { gameId: string },
   ) {
     const session = this.gameService.resignGame(
       payload.gameId,
-      payload.playerId,
+      client.data.userId,
       this.server,
     );
+    await this.gameService.flushGame(payload.gameId);
+    const serialized = this.gameService.serializeGame(session);
+    this.server.to(payload.gameId).emit('game:updated', serialized);
     return {
       event: 'game:finished',
-      data: this.gameService.serializeGame(session),
+      data: serialized,
     };
   }
 
   @SubscribeMessage('game:sync_state')
   handleSyncState(
     @ConnectedSocket() client: Socket,
-    @MessageBody() payload: { gameId: string; playerId?: string },
+    @MessageBody() payload: { gameId: string },
   ) {
-    if (payload.playerId) {
-      this.socketPlayerMap.set(client.id, payload.playerId);
-      this.gameService.handleReconnect(payload.playerId, this.server);
-    }
-    const session = this.gameService.getGameOrThrow(payload.gameId);
-    const serialized = this.gameService.serializeGame(session);
+    this.gameService.handleReconnect(client.data.userId, this.server);
+    const serialized = this.gameService.getGameStateForPlayer(
+      payload.gameId,
+      client.data.userId,
+    );
     client.emit('game:state', serialized);
+    client.emit('game:updated', serialized);
     return { event: 'game:state', data: serialized };
   }
 }

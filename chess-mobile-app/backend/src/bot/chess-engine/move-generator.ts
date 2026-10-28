@@ -8,6 +8,13 @@ export interface GeneratedMove {
 }
 
 const FILES = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'];
+const PIECE_CODES: Record<string, string> = {
+  pawn: 'p', knight: 'n', bishop: 'b', rook: 'r', queen: 'q', king: 'k',
+  p: 'p', n: 'n', b: 'b', r: 'r', q: 'q', k: 'k',
+};
+const PROMOTION_TYPES: Record<string, string> = {
+  q: 'queen', r: 'rook', b: 'bishop', n: 'knight',
+};
 
 export function coordsToSquare(row: number, col: number): string {
   return `${FILES[col]}${8 - row}`;
@@ -24,15 +31,17 @@ export function parseCell(cell: any): { type: string; color: 'w' | 'b' } | null 
   if (typeof cell === 'string') {
     const trimmed = cell.trim();
     if (!trimmed) return null;
+    const rawType = trimmed.toLowerCase();
     return {
-      type: trimmed.toLowerCase(),
+      type: PIECE_CODES[rawType] || rawType,
       color: trimmed === trimmed.toUpperCase() ? 'w' : 'b',
     };
   }
   if (typeof cell === 'object' && cell.type) {
     const rawColor = String(cell.color || 'w').toLowerCase();
+    const rawType = String(cell.type).toLowerCase();
     return {
-      type: String(cell.type).toLowerCase(),
+      type: PIECE_CODES[rawType] || rawType,
       color: rawColor.startsWith('b') ? 'b' : 'w',
     };
   }
@@ -60,7 +69,7 @@ export function applyMoveOnBoard(board: any[][], move: GeneratedMove): any[][] {
     if (typeof movingPiece === 'string') {
       next[to.row][to.col] = parsed.color === 'w' ? promo.toUpperCase() : promo.toLowerCase();
     } else {
-      next[to.row][to.col] = { ...movingPiece, type: promo };
+      next[to.row][to.col] = { ...movingPiece, type: PROMOTION_TYPES[promo] || promo };
     }
   } else {
     next[to.row][to.col] = movingPiece;
