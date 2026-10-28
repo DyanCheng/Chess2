@@ -3,17 +3,19 @@
 // ============================================================
 
 import { create } from 'zustand';
-import { BoardState, BoardPosition, ChessMove, ChessPiece, PieceColor } from '../types/chess';
+import { BoardState, BoardPosition, ChessMove, PieceColor } from '../types/chess';
 import { CardEffect, CardInHand } from '../types/card';
 import { GameMode, GameState, GameStatus, GameTimer } from '../types/game';
 import { PlayerHP } from '../types/player';
 import { INITIAL_BOARD, INITIAL_HP } from '../constants/chess';
-import { cloneBoard, executeMove, getValidMoves, isCheckmate, isStalemate, isInCheck, calculateHPDamage } from '../utils/chessUtils';
+import { calculateHPDamage } from '../utils/chessUtils';
+import { applyLocalMove, localBoard, localLegalMoves, resetLocalChess } from '../services/game/localChess';
 
 interface GameStore {
   // Game state
   gameId: string | null;
   mode: GameMode | null;
+  botId: string | null;
   status: GameStatus;
   board: BoardState;
   currentTurn: PieceColor;
@@ -60,6 +62,7 @@ export const useGameStore = create<GameStore>()((set, get) => ({
   // Initial state
   gameId: null,
   mode: null,
+  botId: null,
   status: 'waiting',
   board: INITIAL_BOARD,
   currentTurn: 'white',
@@ -91,11 +94,13 @@ export const useGameStore = create<GameStore>()((set, get) => ({
 
   // Initialize a new game
   initGame: (mode, playerColor) => {
+    resetLocalChess();
     set({
       gameId: `game_${Date.now()}`,
       mode,
+      botId: null,
       status: 'playing',
-      board: cloneBoard(INITIAL_BOARD),
+      board: localBoard(),
       currentTurn: 'white',
       playerColor,
       moveHistory: [],
@@ -136,7 +141,7 @@ export const useGameStore = create<GameStore>()((set, get) => ({
 
     // If clicking on player's own piece, select it
     if (piece && piece.color === currentTurn && piece.color === playerColor) {
-      const moves = getValidMoves(board, pos);
+      const moves = localLegalMoves(pos);
       set({
         selectedSquare: pos,
         validMoves: moves,
@@ -148,10 +153,11 @@ export const useGameStore = create<GameStore>()((set, get) => ({
 
   // Execute a chess move
   makeMove: (from, to) => {
-    const { board, currentTurn, moveHistory, timer } = get();
-
-    const result = executeMove(board, from, to);
-    const { newBoard, captured, move } = result;
+    const { currentTurn, moveHistory, timer, status } = get();
+    if (status !== 'playing') return;
+    const result = applyLocalMove(from, to);
+    if (!result) return;
+    const { board: newBoard, captured, move } = result;
 
     // Calculate HP damage if piece was captured
     if (captured) {
@@ -198,12 +204,12 @@ export const useGameStore = create<GameStore>()((set, get) => ({
     // Check game end conditions
     let gameResult = null;
     let showGameOverModal = false;
-    let inCheck = isInCheck(newBoard, nextTurn);
+    const inCheck = result.inCheck;
 
-    if (isCheckmate(newBoard, nextTurn)) {
+    if (result.checkmate) {
       gameResult = { winner: currentTurn, reason: 'Chiếu hết!' };
       showGameOverModal = true;
-    } else if (isStalemate(newBoard, nextTurn)) {
+    } else if (result.draw) {
       gameResult = { winner: 'draw' as const, reason: 'Hết nước đi - Hòa!' };
       showGameOverModal = true;
     } else if (get().whiteHP.current <= 0) {
@@ -224,7 +230,7 @@ export const useGameStore = create<GameStore>()((set, get) => ({
     set({
       board: newBoard,
       currentTurn: nextTurn,
-      moveHistory: [...moveHistory, move as ChessMove],
+      moveHistory: [...moveHistory, move],
       selectedSquare: null,
       validMoves: [],
       lastMove: { from, to },
@@ -360,11 +366,13 @@ export const useGameStore = create<GameStore>()((set, get) => ({
   },
 
   resetGame: () => {
+    resetLocalChess();
     set({
       gameId: null,
       mode: null,
+      botId: null,
       status: 'waiting',
-      board: cloneBoard(INITIAL_BOARD),
+      board: localBoard(),
       currentTurn: 'white',
       moveHistory: [],
       selectedSquare: null,

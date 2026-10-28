@@ -101,7 +101,9 @@ export const ShopItemCard: React.FC<ShopItemCardProps> = ({ item, onPress, onBuy
           <TouchableOpacity onPress={onBuy} style={styles.buyButton}>
             <Text style={styles.priceIcon}>{getPriceIcon()}</Text>
             <Text style={styles.priceText}>
-              {item.currencyType === 'real' ? `$${(item.price / 100).toFixed(2)}` : item.price}
+              {item.currencyType === 'real'
+                ? (item.localizedPrice || `$${(item.price / 100).toFixed(2)}`)
+                : item.price}
             </Text>
           </TouchableOpacity>
         ) : (

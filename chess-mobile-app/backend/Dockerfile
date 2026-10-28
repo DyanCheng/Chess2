@@ -1,5 +1,5 @@
 # Build stage
-FROM node:20-alpine AS build
+FROM node:22-alpine AS build
 
 WORKDIR /usr/src/app
 
@@ -10,7 +10,7 @@ COPY . .
 RUN npm run build
 
 # Production stage
-FROM node:20-alpine AS production
+FROM node:22-alpine AS production
 
 WORKDIR /usr/src/app
 
@@ -25,4 +25,4 @@ USER node
 ENV PORT=8080
 EXPOSE 8080
 
-CMD ["node", "dist/main"]
+CMD ["node", "dist/main.js"]

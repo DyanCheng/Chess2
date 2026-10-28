@@ -1,9 +1,11 @@
 import {
   BadRequestException,
   Injectable,
+  Logger,
   NotFoundException,
   Optional,
 } from '@nestjs/common';
+import { randomUUID } from 'node:crypto';
 import { CreateGameDto } from './dto/create-game.dto';
 import { MoveDto } from './dto/move.dto';
 import { GameEndReason, GameState } from './state-machine/game-state.enum';
@@ -21,6 +23,7 @@ import {
   coordsToSquare,
   generateLegalMoves,
 } from '../bot/chess-engine/move-generator';
+import { PersistedMatchSnapshot, SupabaseService } from '../database/supabase.service';
 
 export interface ActiveGameSession {
   id: string;
@@ -38,6 +41,7 @@ export interface ActiveGameSession {
     to: string;
     playerId: string;
     promotion?: string;
+    piece?: string;
     captured?: string;
     timestamp: number;
   }>;
@@ -61,6 +65,8 @@ export class GameService {
   private readonly games = new Map<string, ActiveGameSession>();
   private readonly playerGameMap = new Map<string, string>();
   private readonly waitingQueue: Array<{ id: string; emit?: Function; join?: Function }> = [];
+  private readonly persistenceQueue = new Map<string, Promise<void>>();
+  private readonly logger = new Logger(GameService.name);
 
   private readonly stateService: GameStateService;
   private readonly chessRuleService: ChessRuleService;
@@ -74,6 +80,7 @@ export class GameService {
     @Optional() botService?: BotService,
     @Optional() hpService?: HpService,
     @Optional() checkmateService?: CheckmateService,
+    @Optional() private readonly supabase?: SupabaseService,
   ) {
     this.stateService = stateService || new GameStateService();
     this.chessRuleService = chessRuleService || new ChessRuleService();
@@ -83,7 +90,7 @@ export class GameService {
   }
 
   createGame(dto: CreateGameDto): ActiveGameSession {
-    const id = dto.gameId || `game_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+    const id = dto.gameId || randomUUID();
     const now = Date.now();
     const engine = new ChessEngineGame();
     const initialTimeMs = dto.initialTimeMs ?? 300_000;
@@ -146,6 +153,7 @@ export class GameService {
     if (blackPlayerId && !this.botService.isBotPlayer(blackPlayerId)) {
       this.playerGameMap.set(blackPlayerId, id);
     }
+    this.queuePersistence(session);
 
     return session;
   }
@@ -183,6 +191,8 @@ export class GameService {
       game.timers.lastTurnStartedAt = Date.now();
       game.updatedAt = Date.now();
     }
+
+    this.queuePersistence(game);
 
     return game;
   }
@@ -401,6 +411,7 @@ export class GameService {
       to: toStr,
       playerId: dto.playerId,
       promotion: dto.promotion as any,
+      piece: movingCell.type,
       captured: targetCell?.type,
       timestamp: now,
     };
@@ -437,6 +448,8 @@ export class GameService {
     } else {
       this.setCheckState(game.id, finalEval.isCheck);
     }
+
+    this.queuePersistence(game);
 
     return { moveRecord, finalEval };
   }
@@ -502,6 +515,7 @@ export class GameService {
     game.endReason = reason;
     game.timers.lastTurnStartedAt = null;
     game.updatedAt = Date.now();
+    this.queuePersistence(game);
     return game;
   }
 
@@ -674,8 +688,113 @@ export class GameService {
     return game;
   }
 
+  getGameStateForPlayer(gameId: string, playerId: string) {
+    const game = this.getGameOrThrow(gameId);
+    if (playerId !== game.whitePlayerId && playerId !== game.blackPlayerId) {
+      throw new BadRequestException('Player is not in this game');
+    }
+    return this.serializeGame(game);
+  }
+
+  async flushGame(gameId: string): Promise<void> {
+    await this.persistenceQueue.get(gameId);
+  }
+
   serializeGame(game: ActiveGameSession) {
     const { engine, ...rest } = game;
-    return rest;
+    const fen = this.boardToFen(game);
+    game.fen = fen;
+    const winner = game.winnerId === game.whitePlayerId
+      ? 'w'
+      : game.winnerId === game.blackPlayerId
+        ? 'b'
+        : game.state === GameState.FINISHED ? 'draw' : null;
+    return {
+      ...rest,
+      gameId: game.id,
+      fen,
+      whiteTimeMs: game.timers.whiteRemainingMs,
+      blackTimeMs: game.timers.blackRemainingMs,
+      winner,
+    };
+  }
+
+  private queuePersistence(game: ActiveGameSession): void {
+    if (
+      !this.supabase?.gamePersistenceConfigured ||
+      game.mode !== 'PVP' ||
+      !game.blackPlayerId ||
+      !this.isUuid(game.whitePlayerId) ||
+      !this.isUuid(game.blackPlayerId)
+    ) {
+      return;
+    }
+
+    const winner: PersistedMatchSnapshot['winner'] = game.winnerId === game.whitePlayerId
+      ? 'w'
+      : game.winnerId === game.blackPlayerId
+        ? 'b'
+        : game.state === GameState.FINISHED ? 'draw' : null;
+    const snapshot: PersistedMatchSnapshot = {
+      id: game.id,
+      state: game.state,
+      fen: this.boardToFen(game),
+      moveHistory: game.moves.map(move => ({
+        color: move.playerId === game.whitePlayerId ? 'w' : 'b',
+        from: move.from,
+        to: move.to,
+        piece: move.piece || 'unknown',
+        captured: move.captured,
+        promotion: move.promotion,
+      })),
+      whitePlayerId: game.whitePlayerId,
+      blackPlayerId: game.blackPlayerId,
+      whiteTimeMs: game.timers.whiteRemainingMs,
+      blackTimeMs: game.timers.blackRemainingMs,
+      winner,
+      endReason: game.endReason,
+      createdAt: game.createdAt,
+      updatedAt: game.updatedAt,
+    };
+
+    const previous = this.persistenceQueue.get(game.id) ?? Promise.resolve();
+    const pending = previous
+      .catch(() => undefined)
+      .then(() => this.supabase!.persistMatch(snapshot));
+    this.persistenceQueue.set(game.id, pending);
+    void pending.catch(error => {
+      this.logger.error(`Không lưu được ván ${game.id}: ${error.message}`);
+    });
+  }
+
+  private boardToFen(game: ActiveGameSession): string {
+    const symbols: Record<string, string> = {
+      pawn: 'p', knight: 'n', bishop: 'b', rook: 'r', queen: 'q', king: 'k',
+      p: 'p', n: 'n', b: 'b', r: 'r', q: 'q', k: 'k',
+    };
+    const rows = Array.from({ length: 8 }, (_, row) => {
+      let empty = 0;
+      let encoded = '';
+      for (let col = 0; col < 8; col += 1) {
+        const cell = parseCell(game.board?.[row]?.[col]);
+        if (!cell) {
+          empty += 1;
+          continue;
+        }
+        if (empty) {
+          encoded += String(empty);
+          empty = 0;
+        }
+        const symbol = symbols[cell.type] || 'p';
+        encoded += cell.color === 'w' ? symbol.toUpperCase() : symbol;
+      }
+      if (empty) encoded += String(empty);
+      return encoded || '8';
+    });
+    return `${rows.join('/')} ${game.turn} - - 0 ${Math.floor(game.moves.length / 2) + 1}`;
+  }
+
+  private isUuid(value: string): boolean {
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
   }
 }

@@ -1,4 +1,8 @@
 {
-  "name": "BTChess",
-  "displayName": "BTChess"
+  "expo": {
+    "name": "Arcane Chess",
+    "slug": "arcane-chess",
+    "version": "1.0.0",
+    "platforms": ["android"]
+  }
 }

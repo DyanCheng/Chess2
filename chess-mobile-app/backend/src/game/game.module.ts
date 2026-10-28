@@ -8,9 +8,10 @@ import { CheckService } from './rules/check.service';
 import { CheckmateService } from './rules/checkmate.service';
 import { HpService } from './hp/hp.service';
 import { BotModule } from '../bot/bot.module';
+import { AuthModule } from '../auth/auth.module';
 
 @Module({
-  imports: [BotModule],
+  imports: [BotModule, AuthModule],
   controllers: [GameController],
   providers: [
     GameService,

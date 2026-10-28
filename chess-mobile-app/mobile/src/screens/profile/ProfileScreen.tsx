@@ -6,17 +6,18 @@ import { COLORS, SPACING, BORDER_RADIUS, FONT_SIZES, FONT_WEIGHTS } from '../../
 import { usePlayerStore } from '../../store/playerStore';
 import { PlayerAvatar } from '../../components/common/PlayerAvatar';
 import { GradientButton } from '../../components/common/GradientButton';
-import { authApi } from '../../services/api';
+import { useAuthStore } from '../../store/authStore';
 
 export const ProfileScreen = () => {
   const navigation = useNavigation<NativeStackNavigationProp<any>>();
   const { profile, stats } = usePlayerStore();
+  const { isAuthenticated, username, email, logout } = useAuthStore();
 
   if (!profile) {
     return (
       <View style={styles.centerContainer}>
-        <Text style={styles.text}>Vui lòng đăng nhập</Text>
-        <GradientButton title="Đăng nhập" onPress={() => navigation.navigate('Auth')} />
+        <Text style={styles.text}>Hồ sơ khách chưa sẵn sàng</Text>
+        <GradientButton title="Về trang chủ" onPress={() => navigation.navigate('Home')} />
       </View>
     );
   }
@@ -70,20 +71,18 @@ export const ProfileScreen = () => {
         </View>
 
         <View style={styles.actionsContainer}>
+          <Text style={styles.text}>
+            {isAuthenticated ? `Tài khoản Supabase: ${username || email}` : 'Bạn đang chơi với hồ sơ khách cục bộ.'}
+          </Text>
+          {isAuthenticated ? (
+            <GradientButton title="Đăng xuất" onPress={() => { void logout(); }} variant="outline" fullWidth style={styles.actionBtn} />
+          ) : (
+            <GradientButton title="Đăng nhập / Đăng ký" onPress={() => navigation.navigate('Login')} fullWidth style={styles.actionBtn} />
+          )}
           <GradientButton 
-            title="Sửa hồ sơ" 
-            onPress={() => {}} 
+            title="Cài đặt máy chủ"
+            onPress={() => navigation.navigate('Settings')}
             variant="outline" 
-            fullWidth 
-            style={styles.actionBtn}
-          />
-          <GradientButton 
-            title="Đăng xuất" 
-            onPress={async () => {
-              await authApi.logout();
-              navigation.replace('Auth');
-            }} 
-            variant="danger" 
             fullWidth 
             style={styles.actionBtn}
           />

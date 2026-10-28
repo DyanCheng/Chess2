@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, StatusBar 
 import { COLORS, LIGHT_COLORS } from '../../constants/arcane-colors';
 import { SPACING, FONT_SIZE, FONT_WEIGHT, BORDER_RADIUS, SHADOW } from '../../constants/arcane-theme';
 
-const AVATAR_IMG = require('../../assets/images/champion_avatar.png');
+const AVATAR_IMG = require('../../assets/images/champion_avatar.jpg');
 
 // ============================================================
 // THEME (Dark / Light) - same pattern as the other screens

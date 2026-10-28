@@ -2,18 +2,74 @@
 // ShopScreen - Store for skins, cards, and currency
 // ============================================================
 
-import React from 'react';
-import { View, Text, StyleSheet, ScrollView, SafeAreaView } from 'react-native';
+import React, { useCallback, useEffect, useState } from 'react';
+import { Alert, View, Text, StyleSheet, ScrollView, SafeAreaView, ActivityIndicator } from 'react-native';
 import { COLORS, SPACING, FONT_SIZES, FONT_WEIGHTS } from '../../constants/theme';
 import { useShopStore } from '../../store/shopStore';
 import { usePlayerStore } from '../../store/playerStore';
 import { CurrencyDisplay } from '../../components/common/CurrencyDisplay';
 import { ShopItemCard } from '../../components/shop/ShopItemCard';
 import { GradientButton } from '../../components/common/GradientButton';
+import { useAuthStore } from '../../store/authStore';
+import { apiService } from '../../services/api/apiService';
+import {
+  getIapStoreProducts,
+  isPurchaseCancelled,
+  purchaseIapProduct,
+} from '../../services/iap/revenueCat';
 
 export const ShopScreen: React.FC = () => {
-  const { items, featuredItems, selectedCategory, setCategory, purchaseItem } = useShopStore();
-  const { profile, spendGold, spendGems } = usePlayerStore();
+  const {
+    items, featuredItems, selectedCategory, isLoading,
+    setCategory, purchaseItem, setStorePrices, setLoading,
+  } = useShopStore();
+  const { profile, spendGold, spendGems, setCurrency } = usePlayerStore();
+  const { isAuthenticated, userId } = useAuthStore();
+  const [purchasingId, setPurchasingId] = useState<string | null>(null);
+  const [iapMessage, setIapMessage] = useState('');
+
+  const refreshStore = useCallback(async (showAlert = false) => {
+    if (!isAuthenticated || !userId) {
+      setIapMessage('Đăng nhập để tải giá Google Play và thực hiện giao dịch.');
+      return;
+    }
+
+    setLoading(true);
+    const errors: string[] = [];
+    try {
+      const wallet = await apiService.getWallet();
+      if (wallet.data) setCurrency(wallet.data.gold, wallet.data.gems);
+      else if (wallet.error) errors.push(wallet.error);
+
+      const catalog = await apiService.getIapProducts();
+      if (catalog.data) {
+        try {
+          const products = await getIapStoreProducts(
+            userId,
+            catalog.data.products.map(product => product.productId),
+          );
+          setStorePrices(Object.fromEntries(
+            products.map(product => [product.identifier, product.priceString]),
+          ));
+        } catch (reason) {
+          errors.push(reason instanceof Error ? reason.message : 'Không tải được giá Google Play');
+        }
+      } else if (catalog.error) {
+        errors.push(catalog.error);
+      }
+    } finally {
+      setLoading(false);
+    }
+
+    setIapMessage(errors[0] || 'Đã kết nối cửa hàng và đồng bộ số dư.');
+    if (showAlert) {
+      Alert.alert(errors.length ? 'Chưa đồng bộ hoàn toàn' : 'Đồng bộ thành công', errors[0] || 'Số dư đã được cập nhật.');
+    }
+  }, [isAuthenticated, setCurrency, setLoading, setStorePrices, userId]);
+
+  useEffect(() => {
+    void refreshStore(false);
+  }, [refreshStore]);
 
   if (!profile) return null;
 
@@ -29,23 +85,50 @@ export const ShopScreen: React.FC = () => {
     ? items 
     : items.filter(i => i.category === selectedCategory);
 
-  const handleBuy = (item: any) => {
+  const handleBuy = async (item: any) => {
     if (item.isOwned) return;
+
+    if (item.currencyType === 'real') {
+      if (!isAuthenticated || !userId) {
+        Alert.alert('Cần đăng nhập', 'Hãy đăng nhập trước khi mua hàng để giao dịch gắn đúng tài khoản.');
+        return;
+      }
+      if (!item.storeProductId || purchasingId) return;
+
+      setPurchasingId(item.id);
+      try {
+        await purchaseIapProduct(userId, item.storeProductId);
+        const sync = await apiService.syncIapPurchases();
+        if (!sync.data) {
+          Alert.alert(
+            'Giao dịch đang chờ đồng bộ',
+            `Google Play đã xử lý giao dịch nhưng backend chưa cộng vật phẩm: ${sync.error || 'lỗi không xác định'}. Hãy bấm Đồng bộ giao dịch sau.`,
+          );
+          return;
+        }
+        setCurrency(sync.data.wallet.gold, sync.data.wallet.gems);
+        Alert.alert('Mua thành công', `${item.name} đã được cộng vào tài khoản.`);
+      } catch (reason) {
+        if (!isPurchaseCancelled(reason)) {
+          Alert.alert('Không thể mua', reason instanceof Error ? reason.message : 'Giao dịch thất bại');
+        }
+      } finally {
+        setPurchasingId(null);
+      }
+      return;
+    }
     
     let success = false;
     if (item.currencyType === 'gold') {
       success = spendGold(item.price);
     } else if (item.currencyType === 'gems') {
       success = spendGems(item.price);
-    } else {
-      // Real money purchase flow
-      success = true;
     }
 
     if (success) {
       purchaseItem(item.id);
     } else {
-      // Show not enough currency error
+      Alert.alert('Không đủ tiền', 'Hãy chơi thêm ván với bot để nhận vàng.');
     }
   };
 
@@ -72,7 +155,31 @@ export const ShopScreen: React.FC = () => {
       </View>
 
       <ScrollView style={styles.content} contentContainerStyle={styles.contentContainer} showsVerticalScrollIndicator={false}>
-        
+        <View style={styles.iapPanel}>
+          <View style={styles.iapTextContainer}>
+            <Text style={styles.iapTitle}>Google Play Billing</Text>
+            <Text style={styles.iapMessage}>{iapMessage}</Text>
+          </View>
+          {isLoading || purchasingId ? (
+            <ActivityIndicator color={COLORS.accent} />
+          ) : (
+            <GradientButton
+              title="Đồng bộ giao dịch"
+              onPress={() => void apiService.syncIapPurchases().then(result => {
+                if (result.data) {
+                  setCurrency(result.data.wallet.gold, result.data.wallet.gems);
+                  Alert.alert('Đồng bộ thành công', `Đã ghi nhận ${result.data.creditedPurchases} giao dịch mới.`);
+                } else {
+                  Alert.alert('Không thể đồng bộ', result.error || 'Lỗi không xác định');
+                }
+              })}
+              variant="outline"
+              size="small"
+              disabled={!isAuthenticated}
+            />
+          )}
+        </View>
+
         {selectedCategory === 'all' && (
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Nổi Bật</Text>
@@ -149,6 +256,27 @@ const styles = StyleSheet.create({
   },
   section: {
     marginBottom: SPACING.xl,
+  },
+  iapPanel: {
+    backgroundColor: COLORS.bgCard,
+    borderColor: COLORS.surfaceBorder,
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: SPACING.md,
+    marginBottom: SPACING.lg,
+    gap: SPACING.md,
+  },
+  iapTextContainer: {
+    gap: SPACING.xs,
+  },
+  iapTitle: {
+    color: COLORS.textPrimary,
+    fontSize: FONT_SIZES.md,
+    fontWeight: FONT_WEIGHTS.bold,
+  },
+  iapMessage: {
+    color: COLORS.textMuted,
+    fontSize: FONT_SIZES.sm,
   },
   sectionTitle: {
     color: COLORS.textPrimary,

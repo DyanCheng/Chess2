@@ -1,25 +1,55 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { View, Text, StyleSheet, FlatList } from 'react-native';
 import { COLORS } from '../../constants/theme';
-
-const MOCK_HISTORY = [
-  { id: '1', date: '2023-10-01', opponent: 'Player123', result: 'win', duration: '10:23' },
-  { id: '2', date: '2023-10-02', opponent: 'ChessMaster', result: 'loss', duration: '15:40' },
-  { id: '3', date: '2023-10-02', opponent: 'Bot_Hard', result: 'draw', duration: '20:00' },
-];
+import { useHistoryStore } from '../../store/historyStore';
+import { formatDate } from '../../utils/formatCurrency';
+import { apiService } from '../../services/api/apiService';
+import { useAuthStore } from '../../store/authStore';
+import { GradientButton } from '../../components/common/GradientButton';
 
 export const HistoryScreen = () => {
+  const entries = useHistoryStore(state => state.entries);
+  const { isAuthenticated, userId } = useAuthStore();
+  const [onlineGames, setOnlineGames] = useState<Array<{
+    id: string; status: string; winner_id: string | null; created_at: string;
+    match_players: Array<{ user_id: string; color: 'WHITE' | 'BLACK' }>;
+  }>>([]);
+  const [onlineStatus, setOnlineStatus] = useState('');
+  const loadOnline = async () => {
+    setOnlineStatus('Đang tải lịch sử Supabase...');
+    const response = await apiService.getGameHistory();
+    if (response.error || !response.data) {
+      setOnlineStatus(response.error || 'Không tải được lịch sử online');
+      return;
+    }
+    setOnlineGames(response.data.matches);
+    setOnlineStatus(response.data.matches.length ? '' : 'Chưa có ván online được lưu.');
+  };
   return (
     <View style={styles.container}>
       <Text style={styles.title}>Lịch Sử Trận Đấu</Text>
+      {isAuthenticated && <GradientButton title="Tải lịch sử online" onPress={() => { void loadOnline(); }} size="small" />}
+      {!!onlineStatus && <Text style={styles.date}>{onlineStatus}</Text>}
+      {onlineGames.map(game => (
+        <View key={game.id} style={styles.historyItem}>
+          <View>
+            <Text style={styles.opponentName}>Ván online {game.id}</Text>
+            <Text style={styles.date}>{game.status} • {formatDate(game.created_at)}</Text>
+          </View>
+          <Text style={styles.resultText}>
+            {!game.winner_id ? (game.status === 'DRAW' ? 'Hòa' : 'Đang chơi') : game.winner_id === userId ? 'Thắng' : 'Thua'}
+          </Text>
+        </View>
+      ))}
       <FlatList
-        data={MOCK_HISTORY}
+        data={entries}
+        ListEmptyComponent={<Text style={styles.date}>Chưa có trận nào. Hãy chơi với bot để bắt đầu.</Text>}
         keyExtractor={item => item.id}
         renderItem={({ item }) => (
           <View style={styles.historyItem}>
             <View>
               <Text style={styles.opponentName}>{item.opponent}</Text>
-              <Text style={styles.date}>{item.date} • {item.duration}</Text>
+              <Text style={styles.date}>{formatDate(item.date)} • {item.duration}</Text>
             </View>
             <View style={[styles.resultBadge, item.result === 'win' ? styles.winBg : item.result === 'loss' ? styles.lossBg : styles.drawBg]}>
               <Text style={styles.resultText}>
