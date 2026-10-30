@@ -10,6 +10,8 @@
     "start:dev-client": "expo start --dev-client",
     "build:android:cloud": "npm exec --yes --package=eas-cli@26 -- eas build --platform android --profile preview",
     "build:android:dev": "npm exec --yes --package=eas-cli@26 -- eas build --platform android --profile development",
+    "build:android:production": "npm exec --yes --package=eas-cli@26 -- eas build --platform android --profile production",
+    "submit:android:production": "npm exec --yes --package=eas-cli@26 -- eas submit --platform android --profile production",
     "test": "jest",
     "lint": "eslint .",
     "clean": "cd android && ./gradlew clean && cd .."
@@ -53,7 +55,7 @@
     "typescript": "5.3.3"
   },
   "engines": {
-    "node": ">=22 <23"
+    "node": ">=20 <21"
   },
   "jest": {
     "preset": "react-native"
