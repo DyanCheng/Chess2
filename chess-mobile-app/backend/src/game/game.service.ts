@@ -33,6 +33,7 @@ export interface ActiveGameSession {
   endReason?: GameEndReason | null;
   createdAt: number;
   updatedAt: number;
+  engine: ChessEngineGame;
 }
 
 interface QueuedPlayer {
@@ -363,6 +364,8 @@ export class GameService {
     if (!piece) {
       return false;
     }
+    return finished;
+  }
 
     const isWhitePiece = piece === piece.toUpperCase();
     if ((turn === 'w' && !isWhitePiece) || (turn === 'b' && isWhitePiece)) {
@@ -420,6 +423,8 @@ export class GameService {
       default:
         return false;
     }
+
+    return false;
   }
 
   private isPathClear(
@@ -481,5 +486,84 @@ export class GameService {
       ['P', 'P', 'P', 'P', 'P', 'P', 'P', 'P'],
       ['R', 'N', 'B', 'Q', 'K', 'B', 'N', 'R'],
     ];
+  }
+
+  private queuePersistence(game: ActiveGameSession): void {
+    if (
+      !this.supabase?.gamePersistenceConfigured ||
+      game.mode !== 'PVP' ||
+      !game.blackPlayerId ||
+      !this.isUuid(game.whitePlayerId) ||
+      !this.isUuid(game.blackPlayerId)
+    ) {
+      return;
+    }
+
+    const winner: PersistedMatchSnapshot['winner'] = game.winnerId === game.whitePlayerId
+      ? 'w'
+      : game.winnerId === game.blackPlayerId
+        ? 'b'
+        : game.state === GameState.FINISHED ? 'draw' : null;
+    const snapshot: PersistedMatchSnapshot = {
+      id: game.id,
+      state: game.state,
+      fen: this.boardToFen(game),
+      moveHistory: game.moves.map(move => ({
+        color: move.playerId === game.whitePlayerId ? 'w' : 'b',
+        from: move.from,
+        to: move.to,
+        piece: move.piece || 'unknown',
+        captured: move.captured,
+        promotion: move.promotion,
+      })),
+      whitePlayerId: game.whitePlayerId,
+      blackPlayerId: game.blackPlayerId,
+      whiteTimeMs: game.timers.whiteRemainingMs,
+      blackTimeMs: game.timers.blackRemainingMs,
+      winner,
+      endReason: game.endReason,
+      createdAt: game.createdAt,
+      updatedAt: game.updatedAt,
+    };
+
+    const previous = this.persistenceQueue.get(game.id) ?? Promise.resolve();
+    const pending = previous
+      .catch(() => undefined)
+      .then(() => this.supabase!.persistMatch(snapshot));
+    this.persistenceQueue.set(game.id, pending);
+    void pending.catch(error => {
+      this.logger.error(`Không lưu được ván ${game.id}: ${error.message}`);
+    });
+  }
+
+  private boardToFen(game: ActiveGameSession): string {
+    const symbols: Record<string, string> = {
+      pawn: 'p', knight: 'n', bishop: 'b', rook: 'r', queen: 'q', king: 'k',
+      p: 'p', n: 'n', b: 'b', r: 'r', q: 'q', k: 'k',
+    };
+    const rows = Array.from({ length: 8 }, (_, row) => {
+      let empty = 0;
+      let encoded = '';
+      for (let col = 0; col < 8; col += 1) {
+        const cell = parseCell(game.board?.[row]?.[col]);
+        if (!cell) {
+          empty += 1;
+          continue;
+        }
+        if (empty) {
+          encoded += String(empty);
+          empty = 0;
+        }
+        const symbol = symbols[cell.type] || 'p';
+        encoded += cell.color === 'w' ? symbol.toUpperCase() : symbol;
+      }
+      if (empty) encoded += String(empty);
+      return encoded || '8';
+    });
+    return `${rows.join('/')} ${game.turn} - - 0 ${Math.floor(game.moves.length / 2) + 1}`;
+  }
+
+  private isUuid(value: string): boolean {
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
   }
 }

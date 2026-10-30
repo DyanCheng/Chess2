@@ -47,7 +47,7 @@ export const HomeScreen: React.FC = () => {
         <GlassCard style={styles.hpCard}>
           <Text style={styles.sectionTitle}>Sinh Mệnh Hiện Tại</Text>
           <HPBar hp={{ current: profile.currentHP, max: profile.maxHP, shield: 0 }} />
-          <Text style={styles.hpDesc}>Hồi phục 1 HP mỗi 5 phút</Text>
+          <Text style={styles.hpDesc}>Hồ sơ khách trên thiết bị này</Text>
         </GlassCard>
 
         {/* Play Buttons */}
@@ -65,6 +65,13 @@ export const HomeScreen: React.FC = () => {
             onPress={() => navigation.navigate('GamePvE', { botId: BOT_LEVELS[0].id })}
             icon="🤖"
             variant="accent"
+            size="large"
+            fullWidth
+          />
+          <GradientButton
+            title="Khám phá chế độ Arcane"
+            onPress={() => navigation.navigate('ArcaneModes')}
+            icon="✨"
             size="large"
             fullWidth
           />

@@ -16,7 +16,8 @@ type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
 export const MatchmakingScreen: React.FC = () => {
   const navigation = useNavigation<NavigationProp>();
-  const { matchStatus, searchTime, startSearching, cancelSearch, matchFound } = useMatchmaking();
+  const { matchStatus, searchTime, startSearching, cancelSearch, match, error } = useMatchmaking();
+  const matchFound = !!match;
   
   const pulseAnim = React.useRef(new Animated.Value(1)).current;
   const rotateAnim = React.useRef(new Animated.Value(0)).current;
@@ -25,34 +26,36 @@ export const MatchmakingScreen: React.FC = () => {
     startSearching();
     
     // Pulse animation
-    Animated.loop(
+    const pulse = Animated.loop(
       Animated.sequence([
         Animated.timing(pulseAnim, { toValue: 1.2, duration: 1000, useNativeDriver: true }),
         Animated.timing(pulseAnim, { toValue: 1, duration: 1000, useNativeDriver: true })
       ])
-    ).start();
+    );
+    pulse.start();
 
     // Rotate animation
-    Animated.loop(
+    const rotate = Animated.loop(
       Animated.timing(rotateAnim, {
         toValue: 1,
         duration: 3000,
         useNativeDriver: true,
       })
-    ).start();
+    );
+    rotate.start();
 
     return () => {
+      pulse.stop();
+      rotate.stop();
       cancelSearch();
     };
   }, []);
 
   useEffect(() => {
-    if (matchFound) {
-      setTimeout(() => {
-        navigation.replace('GamePvP');
-      }, 1500);
-    }
-  }, [matchFound, navigation]);
+    if (!match) return;
+    const timeout = setTimeout(() => navigation.replace('GamePvP', match), 500);
+    return () => clearTimeout(timeout);
+  }, [match, navigation]);
 
   const spin = rotateAnim.interpolate({
     inputRange: [0, 1],
@@ -65,8 +68,9 @@ export const MatchmakingScreen: React.FC = () => {
         
         <View style={styles.content}>
           <Text style={styles.title}>
-            {matchFound ? 'ĐÃ TÌM THẤY ĐỐI THỦ!' : 'ĐANG TÌM KIẾM...'}
+            {matchFound ? 'ĐÃ TÌM THẤY ĐỐI THỦ!' : error ? 'CHƯA THỂ TÌM TRẬN' : 'ĐANG TÌM KIẾM...'}
           </Text>
+          {error && <Text style={styles.estimatedText}>{error}</Text>}
           
           <Animated.View style={[styles.radarContainer, { transform: [{ scale: pulseAnim }] }]}>
             <View style={styles.radarRing1} />
@@ -82,14 +86,13 @@ export const MatchmakingScreen: React.FC = () => {
                 Dự kiến: {formatTime(matchStatus.estimatedWait)}
               </Text>
             )}
-            <Text style={styles.playersOnline}>
-              🟢 {matchStatus.playersOnline} người đang online
-            </Text>
+            <Text style={styles.playersOnline}>Máy chủ: {error ? 'chưa kết nối' : 'đang kết nối'}</Text>
           </View>
         </View>
 
         {!matchFound && (
           <View style={styles.actionContainer}>
+            {error && <GradientButton title="Thử lại" onPress={startSearching} size="large" fullWidth />}
             <GradientButton
               title="Hủy Tìm Kiếm"
               onPress={() => {

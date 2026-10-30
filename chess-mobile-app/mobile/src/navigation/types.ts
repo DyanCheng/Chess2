@@ -19,9 +19,13 @@ export type AuthStackParamList = {
 };
 
 export type RootStackParamList = {
-  Auth: NavigatorScreenParams<AuthStackParamList>;
   MainTabs: NavigatorScreenParams<MainTabParamList>;
-  GamePvP: undefined;
+  Login: undefined;
+  Register: undefined;
+  GamePvP: { gameId: string; color: 'w' | 'b'; opponentId: string; playerId: string };
   GamePvE: { botId: string };
   Matchmaking: undefined;
+  ArcaneModes: undefined;
+  ArcanePuzzle: undefined;
+  ArcaneRanking: undefined;
 };

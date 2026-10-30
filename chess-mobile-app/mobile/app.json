@@ -1,4 +1,20 @@
 {
-  "name": "BTChess",
-  "displayName": "BTChess"
+  "expo": {
+    "name": "Arcane Chess",
+    "slug": "arcane-chess",
+    "version": "1.0.0",
+    "platforms": [
+      "android"
+    ],
+    "android": {
+      "package": "com.dyancheng.arcanechess",
+      "versionCode": 1
+    },
+    "extra": {
+      "eas": {
+        "projectId": "3ce53bd7-3dc0-453f-9690-1ca887e3c5b4"
+      }
+    },
+    "owner": "gungn1r"
+  }
 }

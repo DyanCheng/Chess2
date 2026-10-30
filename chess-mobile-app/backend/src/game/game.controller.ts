@@ -1,16 +1,36 @@
 // chess-mobile-app/backend/src/game/game.controller.ts
 import { Controller, Post, Get, Body, Param } from '@nestjs/common';
 import { GameService } from './game.service';
-import { CreateGameDto } from './dto/create-game.dto';
 import { MoveDto } from './dto/move.dto';
 
 @Controller('game')
 export class GameController {
-  constructor(private readonly gameService: GameService) {}
+  constructor(
+    private readonly gameService: GameService,
+    private readonly authService: AuthService,
+  ) {}
 
   @Post('create')
-  createGame(@Body() dto: CreateGameDto) {
-    return this.gameService.createGame(dto);
+  createGame() {
+    throw new ForbiddenException('Hãy tạo ván PvP qua matchmaking đã đăng nhập');
+  }
+
+  @Post('bot')
+  async createBotGame(
+    @Headers('authorization') authorization: string,
+    @Body()
+    body: {
+      difficulty?: 'EASY' | 'MEDIUM' | 'easy' | 'medium';
+      initialHp?: number;
+    },
+  ) {
+    const user = await this.authService.getUser(accessTokenFromHeader(authorization));
+    const game = this.gameService.createBotGame(
+      user.id,
+      body?.difficulty || 'EASY',
+      body?.initialHp ?? 100,
+    );
+    return this.gameService.serializeGame(game);
   }
 
   @Get(':id')

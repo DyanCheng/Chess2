@@ -5,15 +5,14 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { COLORS, SPACING, BORDER_RADIUS, FONT_SIZES, FONT_WEIGHTS } from '../../constants/theme';
 import { GradientButton } from '../../components/common/GradientButton';
 
-import { authApi } from '../../services/api';
-import { usePlayerStore } from '../../store/playerStore';
+import { useAuthStore } from '../../store/authStore';
 
 export const LoginScreen = () => {
   const navigation = useNavigation<NativeStackNavigationProp<any>>();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
-  const { setProfile } = usePlayerStore();
+  const login = useAuthStore(state => state.login);
 
   const handleLogin = async () => {
     if (!email || !password) {
@@ -22,11 +21,8 @@ export const LoginScreen = () => {
     }
     try {
       setLoading(true);
-      const res = await authApi.login({ email, password });
-      if (res.data && (res.data as any).user) {
-        setProfile((res.data as any).user);
-      }
-      navigation.replace('MainTabs');
+      await login(email, password);
+      navigation.navigate('MainTabs', { screen: 'Profile' });
     } catch (err: any) {
       Alert.alert('Lỗi', err.message || 'Đăng nhập không thành công');
     } finally {
@@ -67,10 +63,6 @@ export const LoginScreen = () => {
               secureTextEntry
             />
           </View>
-
-          <TouchableOpacity style={styles.forgotPassword}>
-            <Text style={styles.forgotPasswordText}>Quên mật khẩu?</Text>
-          </TouchableOpacity>
 
           <GradientButton 
             title="Đăng Nhập" 

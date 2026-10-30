@@ -3,7 +3,8 @@
 // ============================================================
 
 import { create } from 'zustand';
-import { PieceSkin } from '../types/chess';
+import { createJSONStorage, persist } from 'zustand/middleware';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export interface ShopItem {
   id: string;
@@ -18,6 +19,8 @@ export interface ShopItem {
   discount?: number;
   isNew?: boolean;
   isFeatured?: boolean;
+  storeProductId?: string;
+  localizedPrice?: string;
 }
 
 interface ShopStore {
@@ -28,6 +31,8 @@ interface ShopStore {
 
   setCategory: (category: string) => void;
   purchaseItem: (itemId: string) => boolean;
+  setStorePrices: (prices: Record<string, string>) => void;
+  setLoading: (isLoading: boolean) => void;
   refreshShop: () => void;
 }
 
@@ -82,7 +87,7 @@ const MOCK_SHOP_ITEMS: ShopItem[] = [
   {
     id: 'bundle_starter',
     name: 'Gói Khởi Đầu',
-    description: '500 Vàng + 50 Kim cương + 2 Thẻ ngẫu nhiên',
+    description: '500 Vàng + 50 Kim cương',
     category: 'bundle',
     price: 199,
     currencyType: 'real',
@@ -91,11 +96,12 @@ const MOCK_SHOP_ITEMS: ShopItem[] = [
     isOwned: false,
     isFeatured: true,
     discount: 30,
+    storeProductId: 'arcane_chess_starter_bundle',
   },
   {
     id: 'bundle_pro',
     name: 'Gói Chiến Binh',
-    description: '2000 Vàng + 200 Kim cương + 5 Thẻ Epic',
+    description: '2000 Vàng + 200 Kim cương',
     category: 'bundle',
     price: 499,
     currencyType: 'real',
@@ -104,6 +110,7 @@ const MOCK_SHOP_ITEMS: ShopItem[] = [
     isOwned: false,
     isFeatured: true,
     discount: 25,
+    storeProductId: 'arcane_chess_pro_bundle',
   },
   {
     id: 'gold_1000',
@@ -114,6 +121,7 @@ const MOCK_SHOP_ITEMS: ShopItem[] = [
     currencyType: 'real',
     imageUrl: 'gold_pack',
     isOwned: false,
+    storeProductId: 'arcane_chess_gold_1000',
   },
   {
     id: 'gems_100',
@@ -124,10 +132,11 @@ const MOCK_SHOP_ITEMS: ShopItem[] = [
     currencyType: 'real',
     imageUrl: 'gem_pack',
     isOwned: false,
+    storeProductId: 'arcane_chess_gems_100',
   },
 ];
 
-export const useShopStore = create<ShopStore>()((set, get) => ({
+export const useShopStore = create<ShopStore>()(persist((set, get) => ({
   items: MOCK_SHOP_ITEMS,
   featuredItems: MOCK_SHOP_ITEMS.filter(i => i.isFeatured),
   selectedCategory: 'all',
@@ -139,16 +148,30 @@ export const useShopStore = create<ShopStore>()((set, get) => ({
     const item = get().items.find(i => i.id === itemId);
     if (!item || item.isOwned) return false;
 
-    set(state => ({
-      items: state.items.map(i =>
+    set(state => {
+      const items = state.items.map(i =>
         i.id === itemId ? { ...i, isOwned: true } : i
-      ),
-    }));
+      );
+      return { items, featuredItems: items.filter(i => i.isFeatured) };
+    });
     return true;
   },
+
+  setStorePrices: (prices) => set(state => {
+    const items = state.items.map(item => ({
+      ...item,
+      localizedPrice: item.storeProductId ? prices[item.storeProductId] : undefined,
+    }));
+    return { items, featuredItems: items.filter(item => item.isFeatured) };
+  }),
+
+  setLoading: (isLoading) => set({ isLoading }),
 
   refreshShop: () => {
     set({ isLoading: true });
     setTimeout(() => set({ isLoading: false }), 500);
   },
+}), {
+  name: 'arcane-shop-v1',
+  storage: createJSONStorage(() => AsyncStorage),
 }));

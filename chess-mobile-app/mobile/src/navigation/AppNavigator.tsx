@@ -3,27 +3,85 @@
 // ============================================================
 
 import React from 'react';
-import { NavigationContainer } from '@react-navigation/native';
+import { NavigationContainer, NavigationProp, useNavigation } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 
 // Import Screens
 import { HomeScreen } from '../screens/home/HomeScreen';
 import { GameScreen } from '../screens/game/GameScreen';
+import { OnlineGameScreen } from '../screens/game/OnlineGameScreen';
 import { MatchmakingScreen } from '../screens/game/MatchmakingScreen';
 import { ShopScreen } from '../screens/shop/ShopScreen';
 import { CardsScreen } from '../screens/cards/CardsScreen';
 import { HistoryScreen } from '../screens/history/HistoryScreen';
 import { SettingsScreen } from '../screens/settings/SettingsScreen';
 import { ProfileScreen } from '../screens/profile/ProfileScreen';
-import { AuthNavigator } from './AuthNavigator';
-import { View, Text } from 'react-native';
+import ModesScreen from '../screens/modes/ModesScreen';
+import PuzzleScreen from '../screens/puzzle/PuzzleScreen';
+import RankingScreen from '../screens/ranking/RankingScreen';
+import { Text } from 'react-native';
+import { BOT_LEVELS } from '../constants/game';
+import { LoginScreen } from '../screens/auth/LoginScreen';
+import { RegisterScreen } from '../screens/auth/RegisterScreen';
 
 import { RootStackParamList, MainTabParamList } from './types';
 import { COLORS } from '../constants/theme';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 const Tab = createBottomTabNavigator<MainTabParamList>();
+
+const navigateArcane = (
+  navigation: NavigationProp<RootStackParamList>,
+  target: string,
+) => {
+  switch (target) {
+    case 'modes':
+      navigation.navigate('ArcaneModes');
+      break;
+    case 'puzzle':
+      navigation.navigate('ArcanePuzzle');
+      break;
+    case 'ranking':
+      navigation.navigate('ArcaneRanking');
+      break;
+    case 'shop':
+      navigation.navigate('MainTabs', { screen: 'Shop' });
+      break;
+    case 'login':
+      navigation.navigate('Login');
+      break;
+    case 'matchmaking':
+      navigation.navigate('Matchmaking');
+      break;
+    case 'bot':
+      navigation.navigate('GamePvE', { botId: BOT_LEVELS[0].id });
+      break;
+    default:
+      if (target.startsWith('bot:')) {
+        const index = Number(target.slice(4)) - 1;
+        navigation.navigate('GamePvE', { botId: BOT_LEVELS[index]?.id ?? BOT_LEVELS[0].id });
+        break;
+      }
+      navigation.navigate('MainTabs', { screen: 'Home' });
+      break;
+  }
+};
+
+const ArcaneModesRoute = () => {
+  const navigation = useNavigation<NavigationProp<RootStackParamList>>();
+  return <ModesScreen onNavigate={(target) => navigateArcane(navigation, target)} />;
+};
+
+const ArcanePuzzleRoute = () => {
+  const navigation = useNavigation<NavigationProp<RootStackParamList>>();
+  return <PuzzleScreen onNavigate={(target) => navigateArcane(navigation, target)} />;
+};
+
+const ArcaneRankingRoute = () => {
+  const navigation = useNavigation<NavigationProp<RootStackParamList>>();
+  return <RankingScreen onNavigate={(target) => navigateArcane(navigation, target)} />;
+};
 
 const MainTabs = () => {
   return (
@@ -57,6 +115,7 @@ const MainTabs = () => {
       <Tab.Screen name="Cards" component={CardsScreen} options={{ title: 'Thẻ Bài' }} />
       <Tab.Screen name="History" component={HistoryScreen} options={{ title: 'Lịch Sử' }} />
       <Tab.Screen name="Profile" component={ProfileScreen} options={{ title: 'Hồ Sơ' }} />
+      <Tab.Screen name="Settings" component={SettingsScreen} options={{ title: 'Cài Đặt' }} />
     </Tab.Navigator>
   );
 };
@@ -65,20 +124,25 @@ export const AppNavigator = () => {
   return (
     <NavigationContainer>
       <Stack.Navigator
+        initialRouteName="MainTabs"
         screenOptions={{
           headerShown: false,
           contentStyle: { backgroundColor: COLORS.bgDark },
         }}
       >
-        <Stack.Screen name="Auth" component={AuthNavigator} />
         <Stack.Screen name="MainTabs" component={MainTabs} />
-        <Stack.Screen name="GamePvP" component={GameScreen} />
+        <Stack.Screen name="Login" component={LoginScreen} />
+        <Stack.Screen name="Register" component={RegisterScreen} />
+        <Stack.Screen name="GamePvP" component={OnlineGameScreen} />
         <Stack.Screen name="GamePvE" component={GameScreen} />
         <Stack.Screen 
           name="Matchmaking" 
           component={MatchmakingScreen}
           options={{ presentation: 'modal' }}
         />
+        <Stack.Screen name="ArcaneModes" component={ArcaneModesRoute} />
+        <Stack.Screen name="ArcanePuzzle" component={ArcanePuzzleRoute} />
+        <Stack.Screen name="ArcaneRanking" component={ArcaneRankingRoute} />
       </Stack.Navigator>
     </NavigationContainer>
   );
