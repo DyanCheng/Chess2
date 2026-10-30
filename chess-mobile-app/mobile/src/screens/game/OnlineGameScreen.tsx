@@ -5,12 +5,15 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Chess } from 'chess.js';
 import { Socket } from 'socket.io-client';
 import { ChessBoard } from '../../components/chess/ChessBoard';
+import { CardHand } from '../../components/cards/CardHand';
 import { GradientButton } from '../../components/common/GradientButton';
 import { COLORS, SPACING } from '../../constants/theme';
 import { RootStackParamList } from '../../navigation/types';
 import { getServerSocket } from '../../services/websocket/serverSocket';
 import { BoardPosition, BoardState, ChessPiece, PieceType } from '../../types/chess';
 import { toAlgebraic } from '../../utils/chessUtils';
+import { apiService, OwnedCardDefinition } from '../../services/api/apiService';
+import { CardInHand } from '../../types/card';
 
 type OnlineRoute = RouteProp<RootStackParamList, 'GamePvP'>;
 type OnlineNavigation = NativeStackNavigationProp<RootStackParamList>;
@@ -24,6 +27,15 @@ interface ServerGameState {
   endReason: string | null;
   whiteTimeMs: number;
   blackTimeMs: number;
+  hp: { white: number; black: number };
+  maxHp: number;
+  lastCardUse?: {
+    playerId: string;
+    cardId: string;
+    effectType: string;
+    value: number;
+    remainingQuantity: number;
+  } | null;
 }
 
 const pieceTypes: Record<string, PieceType> = {
@@ -38,6 +50,32 @@ function boardFromFen(fen: string): BoardState {
   } as ChessPiece : null));
 }
 
+function toCardInHand(card: OwnedCardDefinition): CardInHand {
+  const effectType = card.effectType === 'HEAL' ? 'heal' : 'double_damage';
+  return {
+    card: {
+      id: card.id,
+      name: card.name,
+      description: card.description || '',
+      effectType,
+      rarity: 'common',
+      manaCost: 0,
+      iconUrl: '',
+      effectAnimation: effectType,
+      value: card.effectValue,
+      price: 0,
+      currencyType: 'gold',
+      isOwned: true,
+      quantity: card.quantity,
+      maxPerGame: card.quantity,
+      cooldownTurns: 0,
+    },
+    isUsable: true,
+    cooldownRemaining: 0,
+    usesRemaining: card.quantity,
+  };
+}
+
 export const OnlineGameScreen: React.FC = () => {
   const route = useRoute<OnlineRoute>();
   const navigation = useNavigation<OnlineNavigation>();
@@ -46,6 +84,8 @@ export const OnlineGameScreen: React.FC = () => {
   const [game, setGame] = useState<ServerGameState | null>(null);
   const [selected, setSelected] = useState<BoardPosition | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [cards, setCards] = useState<CardInHand[]>([]);
+  const [selectedCard, setSelectedCard] = useState<CardInHand | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -56,6 +96,14 @@ export const OnlineGameScreen: React.FC = () => {
       setGame(next);
       setSelected(null);
       setError(null);
+      if (next.lastCardUse?.playerId === playerId) {
+        setCards(current => current
+          .map(card => card.card.id === next.lastCardUse?.cardId
+            ? { ...card, usesRemaining: next.lastCardUse.remainingQuantity }
+            : card)
+          .filter(card => card.usesRemaining > 0));
+        setSelectedCard(null);
+      }
     };
     const onError = (reason: { message?: string }) => setError(reason?.message || 'Nước đi không hợp lệ');
     getServerSocket().then(current => {
@@ -67,6 +115,14 @@ export const OnlineGameScreen: React.FC = () => {
       current.on('connect', join);
       join();
     }).catch(reason => setError(reason instanceof Error ? reason.message : 'Mất kết nối'));
+    apiService.getOwnedCards().then(response => {
+      if (!active) return;
+      if (response.error) {
+        setError(response.error);
+        return;
+      }
+      setCards((response.data?.cards ?? []).map(toCardInHand));
+    });
     return () => {
       active = false;
       connected?.off('game:updated', update);
@@ -103,6 +159,11 @@ export const OnlineGameScreen: React.FC = () => {
       { text: 'Đầu hàng', style: 'destructive', onPress: () => socket?.emit('game:resign', { gameId }) },
   ]);
 
+  const useCard = (card: CardInHand) => {
+    if (!game || game.turn !== color || game.state === 'FINISHED') return;
+    socket?.emit('game:use_card', { gameId, cardId: card.card.id });
+  };
+
   const goHome = () => {
     if (game?.state === 'FINISHED') {
       navigation.navigate('MainTabs', { screen: 'Home' });
@@ -132,6 +193,14 @@ export const OnlineGameScreen: React.FC = () => {
         ? `Ván đã kết thúc: ${game.endReason || 'hòa'}${game.winner ? ` (${game.winner})` : ''}`
         : game.turn === color ? 'Đến lượt bạn' : 'Đang chờ đối thủ'}</Text>
       <Text style={styles.clock}>Trắng {Math.ceil(game.whiteTimeMs / 1000)}s  ·  Đen {Math.ceil(game.blackTimeMs / 1000)}s</Text>
+      <Text style={styles.hp}>HP Trắng {game.hp?.white ?? game.maxHp}  ·  HP Đen {game.hp?.black ?? game.maxHp}</Text>
+      {cards.length > 0 && <CardHand
+        cards={cards}
+        selectedCard={selectedCard}
+        onSelectCard={setSelectedCard}
+        onUseCard={useCard}
+        isPlayerTurn={game.turn === color && game.state !== 'FINISHED'}
+      />}
     </> : <Text style={styles.status}>Đang tải ván cờ...</Text>}
     <View style={styles.actions}>
       {game?.state !== 'FINISHED' && <GradientButton title="Đầu hàng" onPress={resign} variant="outline" size="small" />}
@@ -147,6 +216,7 @@ const styles = StyleSheet.create({
   subtitle: { color: COLORS.textSecondary, marginTop: SPACING.sm },
   status: { color: COLORS.textPrimary, textAlign: 'center', fontSize: 18 },
   clock: { color: COLORS.textSecondary, textAlign: 'center' },
+  hp: { color: '#34d399', textAlign: 'center', fontWeight: 'bold' },
   error: { color: '#ef4444', textAlign: 'center', padding: SPACING.md },
   actions: { flexDirection: 'row', justifyContent: 'space-around', padding: SPACING.lg },
 });

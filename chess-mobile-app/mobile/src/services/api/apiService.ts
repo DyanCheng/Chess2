@@ -34,6 +34,16 @@ export interface IapSyncResponse {
   wallet: WalletResponse;
 }
 
+export interface OwnedCardDefinition {
+  id: string;
+  quantity: number;
+  name: string;
+  description: string | null;
+  effectType: 'HEAL' | 'DOUBLE_DAMAGE';
+  effectValue: number;
+  active: boolean;
+}
+
 class ApiService {
   private token: string | null = null;
 
@@ -143,7 +153,7 @@ class ApiService {
 
   // Card endpoints
   async getOwnedCards() {
-    return this.request('GET', '/cards/owned');
+    return this.request<{ cards: OwnedCardDefinition[] }>('GET', '/cards/owned');
   }
 
   async getAllCards() {

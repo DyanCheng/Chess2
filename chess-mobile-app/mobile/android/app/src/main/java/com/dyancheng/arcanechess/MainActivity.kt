@@ -1,4 +1,4 @@
-package com.helloworld
+package com.dyancheng.arcanechess
 
 import android.os.Bundle
 import com.facebook.react.ReactActivity
