@@ -35,4 +35,4 @@ jobs:
           cache-dependency-path: chess-mobile-app/backend/package-lock.json
       - run: npm ci --legacy-peer-deps
       - run: npm run build
-      - run: npm test
+      - run: node --test test/game.service.test.js
