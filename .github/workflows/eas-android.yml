@@ -66,6 +66,13 @@ jobs:
         run: |
           node -e "const c=require('./app.json');if(!c.expo?.extra?.eas?.projectId){throw new Error('Run eas init and commit expo.extra.eas.projectId before enabling EAS_PROJECT_READY')}"
 
+      # Current EAS CLI dependencies require Node >=22. Keep application
+      # validation and the EAS cloud build profile on Node 20 for SDK 50.
+      - name: Use Node.js 22 for EAS CLI
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.13.1
+
       - uses: expo/expo-github-action@v8
         with:
           eas-version: 26.0.0
