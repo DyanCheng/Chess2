@@ -1,0 +1,77 @@
+name: EAS Android
+
+on:
+  workflow_dispatch:
+    inputs:
+      profile:
+        description: EAS build profile
+        required: true
+        default: preview
+        type: choice
+        options:
+          - preview
+          - production
+  push:
+    branches:
+      - main
+      - backup_main
+    tags:
+      - "v*.*.*"
+    paths:
+      - "chess-mobile-app/mobile/**"
+      - ".github/workflows/eas-android.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: eas-android-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    # Keep the workflow inert until repository owners have created
+    # EXPO_TOKEN and EAS_PROJECT_READY=true.
+    if: ${{ vars.EAS_PROJECT_READY == 'true' }}
+    runs-on: ubuntu-latest
+    environment: ${{ github.event_name == 'workflow_dispatch' && inputs.profile || ((github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')) && 'production' || 'preview') }}
+    defaults:
+      run:
+        working-directory: chess-mobile-app/mobile
+    env:
+      # backup_main -> Preview APK; main/version tag -> Production AAB.
+      BUILD_PROFILE: ${{ github.event_name == 'workflow_dispatch' && inputs.profile || ((github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')) && 'production' || 'preview') }}
+      EXPO_NO_TELEMETRY: "1"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20.20.2
+          cache: npm
+          cache-dependency-path: chess-mobile-app/mobile/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Validate mobile project
+        run: |
+          npm run lint
+          npx tsc --noEmit
+          npm test -- --runInBand --cacheDirectory=/tmp/arcane-chess-jest-cache
+          npx expo export --platform android --output-dir /tmp/arcane-chess-dist
+
+      - name: Verify EAS project link
+        run: |
+          node -e "const c=require('./app.json');if(!c.expo?.extra?.eas?.projectId){throw new Error('Run eas init and commit expo.extra.eas.projectId before enabling EAS_PROJECT_READY')}"
+
+      - uses: expo/expo-github-action@v8
+        with:
+          eas-version: 26.0.0
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Trigger EAS build
+        # Pull requests are validated by mobile-ci.yml; cloud builds start only
+        # after code reaches backup_main/main (or through manual dispatch).
+        run: eas build --platform android --profile "$BUILD_PROFILE" --non-interactive --no-wait
