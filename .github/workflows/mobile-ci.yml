@@ -36,7 +36,7 @@ jobs:
           node-version: 20.20.2
           cache: npm
           cache-dependency-path: chess-mobile-app/mobile/package-lock.json
-      - run: npm ci
+      - run: npm ci --legacy-peer-deps
       - run: npm run lint
       - run: npx tsc --noEmit
       - run: npm test -- --runInBand --cacheDirectory=/tmp/arcane-chess-jest-cache
