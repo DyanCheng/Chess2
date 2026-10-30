@@ -1,0 +1,2 @@
+-- Legacy placeholder. S.A.N.D stores PvP data in matches, match_players, and
+-- match_moves. Use ../../supabase/migrations instead of creating public.games.

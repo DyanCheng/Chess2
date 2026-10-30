@@ -1,0 +1,3 @@
+-- Legacy placeholder. Do not run this against S.A.N.D: it already has a
+-- richer profiles schema. The canonical Supabase migrations are in
+-- ../../supabase/migrations and are tracked in the remote migration history.
