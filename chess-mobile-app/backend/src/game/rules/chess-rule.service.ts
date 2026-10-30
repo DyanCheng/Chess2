@@ -1,108 +1,90 @@
 import { Injectable } from '@nestjs/common';
 import { Chess } from 'chess.js';
 
-export type ChessMoveResult =
-  | { success: false; message: string }
-  | {
-      success: true;
-      move: {
-        from: string;
-        to: string;
-        piece: string;
-        captured?: string;
-        promotion?: string;
-        isCastling: boolean;
-        isEnPassant: boolean;
-      };
-      fen: string;
-      turn: 'w' | 'b';
-      status: 'IN_PROGRESS' | 'CHECKMATE' | 'DRAW';
-      reason: string | null;
-      isCheck: boolean;
-      isGameOver: boolean;
-    };
-
-/**
- * Owns the authoritative chess.js instance for each active game.  Keeping the
- * rules here prevents the REST controller and the socket gateway from
- * applying subtly different move validation.
- */
 @Injectable()
 export class ChessRuleService {
-  private readonly games = new Map<string, Chess>();
+  private games: Map<string, Chess> = new Map();
 
-  getGame(gameId: string, fen?: string): Chess {
-    if (!this.games.has(gameId)) {
-      this.games.set(gameId, new Chess(fen));
+  // Khá»Ÿi táº¡o hoáº·c láº¥y game instance theo matchId
+  getGame(matchId: string, fen?: string): Chess {
+    if (!this.games.has(matchId)) {
+      this.games.set(matchId, new Chess(fen));
     }
-    return this.games.get(gameId)!;
+    return this.games.get(matchId)!;
   }
 
-  validateAndApply(
-    gameId: string,
-    from: string,
-    to: string,
-    promotion?: 'q' | 'r' | 'b' | 'n',
-  ): ChessMoveResult {
-    const game = this.getGame(gameId);
-
+  // Thá»±c hiá»‡n nÆ°á»›c Ä‘i vĂ  kiá»ƒm tra toĂ n bá»™ luáº­t chÆ¡i (GAME-008 Ä‘áº¿n GAME-014)
+  validateAndApply(matchId: string, from: string, to: string, promotion?: string) {
+    const game = this.getGame(matchId);
+    
     try {
-      const move = game.move({ from, to, promotion });
-      if (!move) {
-        return { success: false, message: 'Invalid chess move' };
+      // chess.js tá»± Ä‘á»™ng xá»­ lĂ½ Castling, En passant, Promotion tá»« Ä‘á»‘i tÆ°á»£ng move
+      const moveResult = game.move({
+        from,
+        to,
+        promotion: promotion ? promotion.toLowerCase() : 'q',
+      });
+
+      if (!moveResult) {
+        return { success: false, message: 'NÆ°á»›c Ä‘i khĂ´ng há»£p lá»‡' };
       }
 
-      let status: 'IN_PROGRESS' | 'CHECKMATE' | 'DRAW' = 'IN_PROGRESS';
-      let reason: string | null = null;
+      // Kiá»ƒm tra tráº¡ng thĂ¡i vĂ¡n Ä‘áº¥u vĂ  cĂ¡c Ä‘iá»u kiá»‡n káº¿t thĂºc / hĂ²a
+      let status = 'IN_PROGRESS';
+      let reason = null;
+
       if (game.isCheckmate()) {
         status = 'CHECKMATE';
       } else if (game.isStalemate()) {
         status = 'DRAW';
-        reason = 'STALEMATE';
+        reason = 'STALEMATE'; // GAME-011
       } else if (game.isInsufficientMaterial()) {
         status = 'DRAW';
-        reason = 'INSUFFICIENT_MATERIAL';
+        reason = 'INSUFFICIENT_MATERIAL'; // GAME-012
       } else if (game.isDrawByFiftyMoves()) {
         status = 'DRAW';
-        reason = 'FIFTY_MOVE_RULE';
+        reason = 'FIFTY_MOVE_RULE'; // GAME-014
       } else if (game.isThreefoldRepetition()) {
         status = 'DRAW';
-        reason = 'THREEFOLD_REPETITION';
+        reason = 'THREEFOLD_REPETITION'; // GAME-013
+      } else if (game.isDraw()) {
+        status = 'DRAW';
+        reason = 'DRAW';
       }
 
       return {
         success: true,
         move: {
-          from: move.from,
-          to: move.to,
-          piece: move.piece,
-          captured: move.captured,
-          promotion: move.promotion,
-          isCastling: move.flags.includes('k') || move.flags.includes('q'),
-          isEnPassant: move.flags.includes('e'),
+          from: moveResult.from,
+          to: moveResult.to,
+          piece: moveResult.piece,
+          captured: moveResult.captured,
+          promotion: moveResult.promotion,
+          // Kiá»ƒm tra cĂ¡c cá» Ä‘áº·c biá»‡t do chess.js há»— trá»£ sáºµn
+          isCastling: moveResult.san === 'O-O' || moveResult.san === 'O-O-O',
+          isEnPassant: moveResult.flags.includes('e'),
         },
         fen: game.fen(),
         turn: game.turn(),
         status,
         reason,
-        isCheck: game.isCheck(),
         isGameOver: game.isGameOver(),
       };
     } catch (error) {
-      return {
-        success: false,
-        message: error instanceof Error ? error.message : 'Invalid chess move',
-      };
+      return { success: false, message: error.message };
     }
   }
 
-  getSerializedState(gameId: string): string {
-    return this.getGame(gameId).fen();
+  // Há»— trá»£ lÆ°u / khĂ´i phá»¥c tráº¡ng thĂ¡i (GAME-015)
+  getSerializedState(matchId: string): string {
+    const game = this.getGame(matchId);
+    return game.fen();
   }
 
-  restoreState(gameId: string, fen: string): boolean {
+  restoreState(matchId: string, fen: string): boolean {
     try {
-      this.games.set(gameId, new Chess(fen));
+      const game = new Chess(fen);
+      this.games.set(matchId, game);
       return true;
     } catch {
       return false;

@@ -53,7 +53,7 @@ jobs:
           cache-dependency-path: chess-mobile-app/mobile/package-lock.json
 
       - name: Install dependencies
-        run: npm ci
+        run: npm ci --legacy-peer-deps
 
       - name: Validate mobile project
         run: |

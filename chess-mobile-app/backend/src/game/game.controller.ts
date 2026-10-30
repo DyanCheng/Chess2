@@ -1,14 +1,5 @@
-import {
-  Body,
-  Controller,
-  ForbiddenException,
-  Get,
-  Headers,
-  Param,
-  Post,
-} from '@nestjs/common';
-import { AuthService } from '../auth/auth.service';
-import { accessTokenFromHeader } from '../auth/token';
+// chess-mobile-app/backend/src/game/game.controller.ts
+import { Controller, Post, Get, Body, Param } from '@nestjs/common';
 import { GameService } from './game.service';
 import { MoveDto } from './dto/move.dto';
 
@@ -43,22 +34,12 @@ export class GameController {
   }
 
   @Get(':id')
-  async getGame(
-    @Param('id') id: string,
-    @Headers('authorization') authorization: string,
-  ) {
-    const user = await this.authService.getUser(accessTokenFromHeader(authorization));
-    return this.gameService.getGameStateForPlayer(id, user.id);
+  getGame(@Param('id') id: string) {
+    return this.gameService.getGameOrThrow(id);
   }
 
   @Post('move')
-  async makeMove(
-    @Headers('authorization') authorization: string,
-    @Body() dto: MoveDto,
-  ) {
-    const user = await this.authService.getUser(accessTokenFromHeader(authorization));
-    const result = this.gameService.makeMove({ ...dto, playerId: user.id });
-    await this.gameService.flushGame(dto.gameId);
-    return result;
+  makeMove(@Body() dto: MoveDto) {
+    return this.gameService.makeMove(dto);
   }
 }

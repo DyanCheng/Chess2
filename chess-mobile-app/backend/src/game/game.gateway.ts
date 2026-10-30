@@ -1,122 +1,119 @@
 import {
   ConnectedSocket,
-  MessageBody,
+  OnGatewayConnection,
   OnGatewayDisconnect,
   SubscribeMessage,
   WebSocketGateway,
   WebSocketServer,
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
-import { GameService } from './game.service';
-import { MoveDto } from './dto/move.dto';
+import { GameService, BoardPosition } from './game.service';
+import { GameSocketEvent } from './state-machine/game-state.enum';
 
-@WebSocketGateway({ cors: { origin: '*' } })
-export class GameGateway implements OnGatewayDisconnect {
+@WebSocketGateway({
+  cors: {
+    origin: '*',
+  },
+})
+export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @WebSocketServer()
   server: Server;
 
   constructor(private readonly gameService: GameService) {}
 
-  handleDisconnect(client: Socket) {
-    if (client.data.userId) {
-      this.gameService.handleDisconnect(client.data.userId, this.server);
-    }
-  }
+  handleConnection(_client: Socket) {}
 
-  @SubscribeMessage('game:create_bot')
-  handleCreateBotGame(
-    @ConnectedSocket() client: Socket,
-    @MessageBody()
-    payload: {
-      difficulty?: 'EASY' | 'MEDIUM' | 'easy' | 'medium';
-      initialHp?: number;
-    },
-  ) {
-    const playerId = client.data.userId;
-    const session = this.gameService.createBotGame(
-      playerId,
-      payload?.difficulty || 'EASY',
-      payload?.initialHp ?? 100,
-    );
-    client.join(session.id);
-    const serialized = this.gameService.serializeGame(session);
-    client.emit('game:state', serialized);
-    return { event: 'game:created', data: serialized };
-  }
+  handleDisconnect(_client: Socket) {}
 
-  @SubscribeMessage('game:join')
-  handleJoinGame(
+  @SubscribeMessage(GameSocketEvent.FIND_MATCH)
+  handleFindMatch(
     @ConnectedSocket() client: Socket,
-    @MessageBody() payload: { gameId: string },
+    @MessageBody() payload: { playerId: string },
   ) {
-    const playerId = client.data.userId;
-    client.join(payload.gameId);
-    this.gameService.handleReconnect(playerId, this.server);
-    const session = this.gameService.joinGame(payload.gameId, playerId);
-    const serialized = this.gameService.serializeGame(session);
-    this.server.to(payload.gameId).emit('game:state', serialized);
-    this.server.to(payload.gameId).emit('game:updated', serialized);
-    return { event: 'game:joined', data: serialized };
-  }
-
-  @SubscribeMessage('game:move')
-  async handleMove(
-    @ConnectedSocket() client: Socket,
-    @MessageBody() payload: MoveDto | { gameId: string; move: Omit<MoveDto, 'playerId'> },
-  ) {
-    const nested = 'move' in payload ? payload.move : payload;
-    const gameId = payload.gameId || nested.gameId;
-    const result = this.gameService.makeMove({
-      ...nested,
-      gameId,
-      playerId: client.data.userId,
-    }, this.server);
-    await this.gameService.flushGame(gameId);
-    this.server.to(gameId).emit('game:updated', result);
-    return { event: 'game:move_ack', data: result };
-  }
-
-  @SubscribeMessage('game:bot_move')
-  handleBotMove(
-    @ConnectedSocket() client: Socket,
-    @MessageBody() payload: { gameId: string },
-  ) {
-    this.gameService.getGameStateForPlayer(payload.gameId, client.data.userId);
-    const result = this.gameService.makeBotMove(payload.gameId, this.server);
-    return { event: 'game:bot_move_ack', data: result };
-  }
-
-  @SubscribeMessage('game:resign')
-  async handleResign(
-    @ConnectedSocket() client: Socket,
-    @MessageBody() payload: { gameId: string },
-  ) {
-    const session = this.gameService.resignGame(
-      payload.gameId,
-      client.data.userId,
+    return this.gameService.addToMatchmaking(
+      payload.playerId,
+      client,
       this.server,
     );
-    await this.gameService.flushGame(payload.gameId);
-    const serialized = this.gameService.serializeGame(session);
-    this.server.to(payload.gameId).emit('game:updated', serialized);
-    return {
-      event: 'game:finished',
-      data: serialized,
-    };
   }
 
-  @SubscribeMessage('game:sync_state')
+  @SubscribeMessage(GameSocketEvent.MAKE_MOVE)
+  handleMakeMoveEvent(
+    @ConnectedSocket() _client: Socket,
+    @MessageBody()
+    payload: {
+      playerId: string;
+      gameId: string;
+      from: BoardPosition;
+      to: BoardPosition;
+      promotion?: 'q' | 'r' | 'b' | 'n';
+    },
+  ) {
+    return this.gameService.handleMove(
+      payload.playerId,
+      payload.gameId,
+      payload.from,
+      payload.to,
+      this.server,
+      payload.promotion,
+    );
+  }
+
+  @SubscribeMessage(GameSocketEvent.GAME_MOVE)
+  handleStandardMove(
+    @ConnectedSocket() _client: Socket,
+    @MessageBody()
+    payload: {
+      playerId: string;
+      gameId: string;
+      from: BoardPosition;
+      to: BoardPosition;
+      promotion?: 'q' | 'r' | 'b' | 'n';
+    },
+  ) {
+    return this.gameService.handleMove(
+      payload.playerId,
+      payload.gameId,
+      payload.from,
+      payload.to,
+      this.server,
+      payload.promotion,
+    );
+  }
+
+  @SubscribeMessage(GameSocketEvent.JOIN_GAME)
+  handleJoinGame(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() payload: { gameId: string; playerId: string },
+  ) {
+    client.join(payload.gameId);
+    const game = this.gameService.joinGame(payload.gameId, payload.playerId);
+    this.server?.to(payload.gameId).emit(GameSocketEvent.STATE_UPDATED, game);
+    return { success: true, data: game };
+  }
+
+  @SubscribeMessage(GameSocketEvent.RESIGN)
+  handleResign(
+    @ConnectedSocket() _client: Socket,
+    @MessageBody() payload: { gameId: string; playerId: string },
+  ) {
+    const game = this.gameService.resignGame(payload.gameId, payload.playerId);
+    this.server?.to(game.id).emit(GameSocketEvent.GAME_OVER, {
+      gameId: game.id,
+      winnerId: game.winnerId,
+      reason: game.endReason,
+      state: game.state,
+    });
+    return { success: true, data: game };
+  }
+
+  @SubscribeMessage(GameSocketEvent.SYNC_STATE)
   handleSyncState(
     @ConnectedSocket() client: Socket,
     @MessageBody() payload: { gameId: string },
   ) {
-    this.gameService.handleReconnect(client.data.userId, this.server);
-    const serialized = this.gameService.getGameStateForPlayer(
-      payload.gameId,
-      client.data.userId,
-    );
-    client.emit('game:state', serialized);
-    client.emit('game:updated', serialized);
-    return { event: 'game:state', data: serialized };
+    const game = this.gameService.getGameOrThrow(payload.gameId);
+    client.emit(GameSocketEvent.STATE_UPDATED, game);
+    return { success: true, data: game };
   }
 }

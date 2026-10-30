@@ -37,7 +37,9 @@ jobs:
           cache: npm
           cache-dependency-path: chess-mobile-app/mobile/package-lock.json
       - run: npm ci
+        working-directory: chess-mobile-app/backend --legacy-peer-deps
       - run: npm run lint
       - run: npx tsc --noEmit
-      - run: npm test -- --runInBand --cacheDirectory=/tmp/arcane-chess-jest-cache
+      - run: npm test
+        working-directory: chess-mobile-app/backend -- --runInBand --cacheDirectory=/tmp/arcane-chess-jest-cache
       - run: npx expo export --platform android --output-dir /tmp/arcane-chess-dist
