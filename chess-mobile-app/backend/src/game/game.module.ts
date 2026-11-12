@@ -9,6 +9,7 @@ import { CheckmateService } from './rules/checkmate.service';
 import { HpService } from './hp/hp.service';
 import { BotModule } from '../bot/bot.module';
 import { AuthModule } from '../auth/auth.module';
+import { MatchRewardService } from './match-reward.service';
 
 @Module({
   imports: [BotModule, AuthModule],
@@ -21,6 +22,7 @@ import { AuthModule } from '../auth/auth.module';
     CheckService,
     CheckmateService,
     HpService,
+    MatchRewardService,
   ],
   exports: [GameService, GameStateService, HpService, CheckmateService],
 })

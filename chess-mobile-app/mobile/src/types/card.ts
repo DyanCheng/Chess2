@@ -13,6 +13,7 @@ export type CardEffectType =
   | 'swap'          // Đổi vị trí 2 quân cờ
   | 'reveal'        // Hiện nước đi tiếp theo của đối thủ
   | 'time_bonus'    // Thêm thời gian
+  | 'extra_move'
   | 'poison'        // Gây sát thương theo thời gian
   | 'mirror'        // Phản chiếu sát thương
   | 'teleport'      // Di chuyển quân cờ đến vị trí bất kỳ
@@ -20,6 +21,7 @@ export type CardEffectType =
 
 export interface Card {
   id: string;
+  serverId?: string;
   name: string;
   description: string;
   effectType: CardEffectType;

@@ -34,6 +34,66 @@ export interface IapSyncResponse {
   wallet: WalletResponse;
 }
 
+export interface ShopCatalogItem {
+  id: string;
+  name: string;
+  description: string;
+  itemType: 'CARD' | 'SKIN' | 'CURRENCY_PACK';
+  referenceId: string | null;
+  price: number;
+  currencyType: 'GOLD' | 'GEM';
+  stock: number | null;
+  isActive: boolean;
+  ownedQuantity: number;
+  isOwned: boolean;
+  canPurchaseMultiple: boolean;
+  rewardCurrency: number;
+  rewardGems: number;
+  card: {
+    id: string;
+    name: string;
+    description: string | null;
+    effectType: string;
+    value: number;
+  } | null;
+}
+
+export interface ShopPurchaseResponse {
+  purchase: {
+    id: string;
+    itemId: string;
+    itemName: string;
+    itemType: ShopCatalogItem['itemType'];
+    referenceId: string | null;
+    quantity: number;
+    totalPrice: number;
+    currencyType: ShopCatalogItem['currencyType'];
+    replayed: boolean;
+  };
+  wallet: {
+    gold: number;
+    gems: number;
+  };
+  inventory: {
+    itemId: string;
+    ownedQuantity: number;
+    cardId: string | null;
+    cardQuantity: number;
+    card: {
+      id: string;
+      name: string;
+      description: string;
+      effectType: string;
+      value: number;
+      quantity: number;
+    } | null;
+  };
+  rewards: {
+    gold: number;
+    gems: number;
+  };
+}
+
 class ApiService {
   private token: string | null = null;
 
@@ -122,11 +182,15 @@ class ApiService {
 
   // Shop endpoints
   async getShopItems() {
-    return this.request('GET', '/shop/items');
+    return this.request<{ items: ShopCatalogItem[] }>('GET', '/shop/items');
   }
 
-  async purchaseItem(itemId: string) {
-    return this.request('POST', '/shop/purchase', { itemId });
+  async purchaseItem(itemId: string, quantity: number, idempotencyKey: string) {
+    return this.request<ShopPurchaseResponse>('POST', '/shop/purchase', {
+      item_id: itemId,
+      quantity,
+      idempotency_key: idempotencyKey,
+    });
   }
 
   async getIapProducts() {

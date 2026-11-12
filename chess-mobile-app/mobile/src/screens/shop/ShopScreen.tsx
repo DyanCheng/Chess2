@@ -2,11 +2,12 @@
 // ShopScreen - Store for skins, cards, and currency
 // ============================================================
 
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, View, Text, StyleSheet, ScrollView, SafeAreaView, ActivityIndicator } from 'react-native';
 import { COLORS, SPACING, FONT_SIZES, FONT_WEIGHTS } from '../../constants/theme';
-import { useShopStore } from '../../store/shopStore';
+import { ShopItem, useShopStore } from '../../store/shopStore';
 import { usePlayerStore } from '../../store/playerStore';
+import { useCardStore } from '../../store/cardStore';
 import { CurrencyDisplay } from '../../components/common/CurrencyDisplay';
 import { ShopItemCard } from '../../components/shop/ShopItemCard';
 import { GradientButton } from '../../components/common/GradientButton';
@@ -21,22 +22,46 @@ import {
 export const ShopScreen: React.FC = () => {
   const {
     items, featuredItems, selectedCategory, isLoading,
-    setCategory, purchaseItem, setStorePrices, setLoading,
+    setCategory, setServerItems, applyPurchase, setStorePrices, setLoading,
   } = useShopStore();
-  const { profile, spendGold, spendGems, setCurrency } = usePlayerStore();
+  const { profile, setCurrency } = usePlayerStore();
+  const syncServerCard = useCardStore(state => state.syncServerCard);
   const { isAuthenticated, userId } = useAuthStore();
   const [purchasingId, setPurchasingId] = useState<string | null>(null);
   const [iapMessage, setIapMessage] = useState('');
+  const [shopMessage, setShopMessage] = useState('');
+  const purchaseKeys = useRef(new Map<string, string>());
+  const purchaseBusy = useRef(false);
 
   const refreshStore = useCallback(async (showAlert = false) => {
     if (!isAuthenticated || !userId) {
       setIapMessage('Đăng nhập để tải giá Google Play và thực hiện giao dịch.');
+      setShopMessage('Đăng nhập để tải cửa hàng.');
       return;
     }
 
     setLoading(true);
     const errors: string[] = [];
     try {
+      const shop = await apiService.getShopItems();
+      if (shop.data) {
+        setServerItems(shop.data.items);
+        for (const item of shop.data.items) {
+          if (item.card) {
+            syncServerCard({
+              ...item.card,
+              description: item.card.description ?? '',
+              quantity: item.ownedQuantity,
+            });
+          }
+        }
+        setShopMessage(shop.data.items.length ? '' : 'Chưa có vật phẩm nào đang được bán.');
+      } else {
+        const message = shop.error || 'Không thể tải danh sách vật phẩm.';
+        setShopMessage(message);
+        errors.push(message);
+      }
+
       const wallet = await apiService.getWallet();
       if (wallet.data) setCurrency(wallet.data.gold, wallet.data.gems);
       else if (wallet.error) errors.push(wallet.error);
@@ -57,6 +82,10 @@ export const ShopScreen: React.FC = () => {
       } else if (catalog.error) {
         errors.push(catalog.error);
       }
+    } catch (reason) {
+      const message = reason instanceof Error ? reason.message : 'Không thể tải dữ liệu cửa hàng.';
+      setShopMessage(message);
+      errors.push(message);
     } finally {
       setLoading(false);
     }
@@ -65,7 +94,7 @@ export const ShopScreen: React.FC = () => {
     if (showAlert) {
       Alert.alert(errors.length ? 'Chưa đồng bộ hoàn toàn' : 'Đồng bộ thành công', errors[0] || 'Số dư đã được cập nhật.');
     }
-  }, [isAuthenticated, setCurrency, setLoading, setStorePrices, userId]);
+  }, [isAuthenticated, setCurrency, setLoading, setServerItems, setStorePrices, syncServerCard, userId]);
 
   useEffect(() => {
     void refreshStore(false);
@@ -85,16 +114,18 @@ export const ShopScreen: React.FC = () => {
     ? items 
     : items.filter(i => i.category === selectedCategory);
 
-  const handleBuy = async (item: any) => {
-    if (item.isOwned) return;
+  const handleBuy = async (item: ShopItem) => {
+    if (item.isOwned && !item.canPurchaseMultiple) return;
+    if (purchaseBusy.current) return;
 
     if (item.currencyType === 'real') {
       if (!isAuthenticated || !userId) {
         Alert.alert('Cần đăng nhập', 'Hãy đăng nhập trước khi mua hàng để giao dịch gắn đúng tài khoản.');
         return;
       }
-      if (!item.storeProductId || purchasingId) return;
+      if (!item.storeProductId) return;
 
+      purchaseBusy.current = true;
       setPurchasingId(item.id);
       try {
         await purchaseIapProduct(userId, item.storeProductId);
@@ -113,22 +144,51 @@ export const ShopScreen: React.FC = () => {
           Alert.alert('Không thể mua', reason instanceof Error ? reason.message : 'Giao dịch thất bại');
         }
       } finally {
+        purchaseBusy.current = false;
         setPurchasingId(null);
       }
       return;
     }
-    
-    let success = false;
-    if (item.currencyType === 'gold') {
-      success = spendGold(item.price);
-    } else if (item.currencyType === 'gems') {
-      success = spendGems(item.price);
+
+    if (!isAuthenticated || !userId) {
+      Alert.alert('Cần đăng nhập', 'Hãy đăng nhập trước khi mua vật phẩm.');
+      return;
+    }
+    if (item.stock === 0) return;
+
+    let idempotencyKey = purchaseKeys.current.get(item.id);
+    if (!idempotencyKey) {
+      idempotencyKey = `shop-${item.id}-${Date.now()}-${Math.random().toString(36).slice(2, 12)}`;
+      purchaseKeys.current.set(item.id, idempotencyKey);
     }
 
-    if (success) {
-      purchaseItem(item.id);
-    } else {
-      Alert.alert('Không đủ tiền', 'Hãy chơi thêm ván với bot để nhận vàng.');
+    purchaseBusy.current = true;
+    setPurchasingId(item.id);
+    try {
+      const result = await apiService.purchaseItem(item.id, 1, idempotencyKey);
+      if (!result.data) {
+        Alert.alert('Không thể mua', result.error || 'Giao dịch thất bại. Bạn có thể thử lại.');
+        return;
+      }
+
+      setCurrency(result.data.wallet.gold, result.data.wallet.gems);
+      applyPurchase(result.data.inventory.itemId, result.data.inventory.ownedQuantity);
+      if (result.data.inventory.card) {
+        syncServerCard(result.data.inventory.card);
+      }
+      purchaseKeys.current.delete(item.id);
+      Alert.alert(
+        'Mua thành công',
+        `${result.data.purchase.itemName} x${result.data.purchase.quantity} đã được xác nhận.`,
+      );
+    } catch (reason) {
+      Alert.alert(
+        'Không thể mua',
+        reason instanceof Error ? reason.message : 'Giao dịch thất bại. Bạn có thể thử lại.',
+      );
+    } finally {
+      purchaseBusy.current = false;
+      setPurchasingId(null);
     }
   };
 
@@ -190,6 +250,8 @@ export const ShopScreen: React.FC = () => {
                   item={item}
                   onPress={() => {}}
                   onBuy={() => handleBuy(item)}
+                  isLoading={purchasingId === item.id}
+                  disabled={Boolean(purchasingId) || !isAuthenticated || (item.stock !== null && item.stock !== undefined && item.stock === 0)}
                 />
               ))}
             </View>
@@ -198,6 +260,7 @@ export const ShopScreen: React.FC = () => {
 
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Tất Cả Vật Phẩm</Text>
+          {!!shopMessage && <Text style={styles.iapMessage}>{shopMessage}</Text>}
           <View style={styles.grid}>
             {filteredItems.map(item => (
               <ShopItemCard
@@ -205,6 +268,8 @@ export const ShopScreen: React.FC = () => {
                 item={item}
                 onPress={() => {}}
                 onBuy={() => handleBuy(item)}
+                isLoading={purchasingId === item.id}
+                disabled={Boolean(purchasingId) || !isAuthenticated || (item.stock !== null && item.stock !== undefined && item.stock === 0)}
               />
             ))}
           </View>

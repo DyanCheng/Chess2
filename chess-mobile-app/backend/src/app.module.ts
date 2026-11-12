@@ -9,6 +9,7 @@ import { AuthModule } from './auth/auth.module';
 import { UsersModule } from './users/users.module';
 import { HistoryModule } from './history/history.module';
 import { IapModule } from './iap/iap.module';
+import { ShopModule } from './shop/shop.module';
 
 @Module({
   imports: [
@@ -17,6 +18,7 @@ import { IapModule } from './iap/iap.module';
     UsersModule,
     HistoryModule,
     IapModule,
+    ShopModule,
     BotModule,
     GameModule,
     MatchmakingModule,

@@ -3,6 +3,13 @@
     "name": "Arcane Chess",
     "slug": "arcane-chess",
     "version": "1.0.0",
-    "platforms": ["android"]
+    "platforms": [
+      "android"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "0c71e216-7dd0-41c8-b177-d32045c613de"
+      }
+    }
   }
 }

@@ -12,9 +12,17 @@ interface ShopItemCardProps {
   item: ShopItem;
   onPress: () => void;
   onBuy: () => void;
+  isLoading?: boolean;
+  disabled?: boolean;
 }
 
-export const ShopItemCard: React.FC<ShopItemCardProps> = ({ item, onPress, onBuy }) => {
+export const ShopItemCard: React.FC<ShopItemCardProps> = ({
+  item,
+  onPress,
+  onBuy,
+  isLoading = false,
+  disabled = false,
+}) => {
   const scaleAnim = useRef(new Animated.Value(1)).current;
 
   const handlePressIn = () => {
@@ -54,6 +62,7 @@ export const ShopItemCard: React.FC<ShopItemCardProps> = ({ item, onPress, onBuy
   };
 
   const rarityColor = item.rarity ? RARITY_CONFIG[item.rarity]?.color : COLORS.textMuted;
+  const canPurchase = item.currencyType === 'real' || !item.isOwned || item.canPurchaseMultiple;
 
   return (
     <Animated.View style={[styles.wrapper, { transform: [{ scale: scaleAnim }] }]}>
@@ -97,13 +106,21 @@ export const ShopItemCard: React.FC<ShopItemCardProps> = ({ item, onPress, onBuy
         </Text>
 
         {/* Price */}
-        {!item.isOwned ? (
-          <TouchableOpacity onPress={onBuy} style={styles.buyButton}>
+        {canPurchase ? (
+          <TouchableOpacity
+            onPress={onBuy}
+            disabled={disabled || isLoading}
+            style={[styles.buyButton, (disabled || isLoading) && styles.buyButtonDisabled]}
+          >
             <Text style={styles.priceIcon}>{getPriceIcon()}</Text>
             <Text style={styles.priceText}>
-              {item.currencyType === 'real'
-                ? (item.localizedPrice || `$${(item.price / 100).toFixed(2)}`)
-                : item.price}
+              {isLoading
+                ? 'Đang mua...'
+                : item.stock === 0
+                  ? 'Tạm hết'
+                  : item.currencyType === 'real'
+                    ? (item.localizedPrice || `$${(item.price / 100).toFixed(2)}`)
+                    : item.price}
             </Text>
           </TouchableOpacity>
         ) : (
@@ -184,6 +201,9 @@ const styles = StyleSheet.create({
     paddingVertical: SPACING.sm,
     borderRadius: BORDER_RADIUS.full,
     marginTop: SPACING.xs,
+  },
+  buyButtonDisabled: {
+    opacity: 0.55,
   },
   priceIcon: {
     fontSize: 14,

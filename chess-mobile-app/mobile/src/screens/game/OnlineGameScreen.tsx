@@ -26,6 +26,12 @@ interface ServerGameState {
   blackTimeMs: number;
 }
 
+interface ServerMatchReward {
+  status: 'credited' | 'already_credited' | 'failed';
+  currency: number | null;
+  experience: number | null;
+}
+
 const pieceTypes: Record<string, PieceType> = {
   p: 'pawn', n: 'knight', b: 'bishop', r: 'rook', q: 'queen', k: 'king',
 };
@@ -44,12 +50,14 @@ export const OnlineGameScreen: React.FC = () => {
   const { gameId, color, opponentId, playerId } = route.params;
   const [socket, setSocket] = useState<Socket | null>(null);
   const [game, setGame] = useState<ServerGameState | null>(null);
+  const [reward, setReward] = useState<ServerMatchReward | null>(null);
   const [selected, setSelected] = useState<BoardPosition | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
     let connected: Socket | null = null;
+    setReward(null);
     const join = () => connected?.emit('game:join', { gameId });
     const update = (next: ServerGameState) => {
       if (next.gameId !== gameId || !active) return;
@@ -58,11 +66,15 @@ export const OnlineGameScreen: React.FC = () => {
       setError(null);
     };
     const onError = (reason: { message?: string }) => setError(reason?.message || 'Nước đi không hợp lệ');
+    const onReward = (result: ServerMatchReward) => {
+      if (active) setReward(result);
+    };
     getServerSocket().then(current => {
       if (!active) return;
       connected = current;
       setSocket(current);
       current.on('game:updated', update);
+      current.on('game:reward', onReward);
       current.on('exception', onError);
       current.on('connect', join);
       join();
@@ -70,6 +82,7 @@ export const OnlineGameScreen: React.FC = () => {
     return () => {
       active = false;
       connected?.off('game:updated', update);
+      connected?.off('game:reward', onReward);
       connected?.off('exception', onError);
       connected?.off('connect', join);
     };
@@ -131,6 +144,9 @@ export const OnlineGameScreen: React.FC = () => {
       <Text style={styles.status}>{game.state === 'FINISHED'
         ? `Ván đã kết thúc: ${game.endReason || 'hòa'}${game.winner ? ` (${game.winner})` : ''}`
         : game.turn === color ? 'Đến lượt bạn' : 'Đang chờ đối thủ'}</Text>
+      {reward && <Text style={styles.status}>{reward.status === 'failed'
+        ? 'Phần thưởng đang chờ xử lý lại.'
+        : `Số dư mới: ${reward.currency ?? 0} vàng · Kinh nghiệm: ${reward.experience ?? 0}.`}</Text>}
       <Text style={styles.clock}>Trắng {Math.ceil(game.whiteTimeMs / 1000)}s  ·  Đen {Math.ceil(game.blackTimeMs / 1000)}s</Text>
     </> : <Text style={styles.status}>Đang tải ván cờ...</Text>}
     <View style={styles.actions}>

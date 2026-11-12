@@ -5,6 +5,7 @@
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { ShopCatalogItem } from '../services/api/apiService';
 
 export interface ShopItem {
   id: string;
@@ -21,6 +22,14 @@ export interface ShopItem {
   isFeatured?: boolean;
   storeProductId?: string;
   localizedPrice?: string;
+  referenceId?: string | null;
+  ownedQuantity?: number;
+  canPurchaseMultiple?: boolean;
+  stock?: number | null;
+  isActive?: boolean;
+  rewardCurrency?: number;
+  rewardGems?: number;
+  card?: ShopCatalogItem['card'];
 }
 
 interface ShopStore {
@@ -30,60 +39,14 @@ interface ShopStore {
   isLoading: boolean;
 
   setCategory: (category: string) => void;
-  purchaseItem: (itemId: string) => boolean;
+  setServerItems: (items: ShopCatalogItem[]) => void;
+  applyPurchase: (itemId: string, ownedQuantity: number) => void;
   setStorePrices: (prices: Record<string, string>) => void;
   setLoading: (isLoading: boolean) => void;
   refreshShop: () => void;
 }
 
-const MOCK_SHOP_ITEMS: ShopItem[] = [
-  {
-    id: 'skin_royal',
-    name: 'Bộ Hoàng Gia',
-    description: 'Quân cờ phong cách hoàng gia sang trọng',
-    category: 'skin',
-    price: 500,
-    currencyType: 'gems',
-    imageUrl: 'skin_royal',
-    rarity: 'legendary',
-    isOwned: false,
-    isFeatured: true,
-    isNew: true,
-  },
-  {
-    id: 'skin_neon',
-    name: 'Neon Cyber',
-    description: 'Quân cờ phong cách cyberpunk neon',
-    category: 'skin',
-    price: 300,
-    currencyType: 'gems',
-    imageUrl: 'skin_neon',
-    rarity: 'epic',
-    isOwned: false,
-    isNew: true,
-  },
-  {
-    id: 'skin_wood',
-    name: 'Gỗ Cổ Điển',
-    description: 'Quân cờ gỗ phong cách truyền thống',
-    category: 'skin',
-    price: 1000,
-    currencyType: 'gold',
-    imageUrl: 'skin_wood',
-    rarity: 'common',
-    isOwned: false,
-  },
-  {
-    id: 'skin_crystal',
-    name: 'Pha Lê Kỳ Diệu',
-    description: 'Quân cờ pha lê phát sáng huyền ảo',
-    category: 'skin',
-    price: 400,
-    currencyType: 'gems',
-    imageUrl: 'skin_crystal',
-    rarity: 'epic',
-    isOwned: false,
-  },
+const IAP_SHOP_ITEMS: ShopItem[] = [
   {
     id: 'bundle_starter',
     name: 'Gói Khởi Đầu',
@@ -137,25 +100,55 @@ const MOCK_SHOP_ITEMS: ShopItem[] = [
 ];
 
 export const useShopStore = create<ShopStore>()(persist((set, get) => ({
-  items: MOCK_SHOP_ITEMS,
-  featuredItems: MOCK_SHOP_ITEMS.filter(i => i.isFeatured),
+  items: IAP_SHOP_ITEMS,
+  featuredItems: IAP_SHOP_ITEMS.filter(i => i.isFeatured),
   selectedCategory: 'all',
   isLoading: false,
 
   setCategory: (category) => set({ selectedCategory: category }),
 
-  purchaseItem: (itemId) => {
-    const item = get().items.find(i => i.id === itemId);
-    if (!item || item.isOwned) return false;
+  setServerItems: (serverItems) => set(state => {
+    const localizedPrices = new Map(
+      state.items
+        .filter(item => item.storeProductId && item.localizedPrice)
+        .map(item => [item.storeProductId as string, item.localizedPrice as string]),
+    );
+    const mappedItems: ShopItem[] = serverItems.map(item => ({
+      id: item.id,
+      name: item.name,
+      description: item.description,
+      category: item.itemType === 'CARD'
+        ? 'card'
+        : item.itemType === 'SKIN' ? 'skin' : 'currency',
+      price: item.price,
+      currencyType: item.currencyType === 'GEM' ? 'gems' : 'gold',
+      imageUrl: item.referenceId || item.id,
+      isOwned: item.isOwned,
+      ownedQuantity: item.ownedQuantity,
+      canPurchaseMultiple: item.canPurchaseMultiple,
+      referenceId: item.referenceId,
+      stock: item.stock,
+      isActive: item.isActive,
+      rewardCurrency: item.rewardCurrency,
+      rewardGems: item.rewardGems,
+      card: item.card,
+    }));
+    const iapItems = IAP_SHOP_ITEMS.map(item => ({
+      ...item,
+      localizedPrice: item.storeProductId
+        ? localizedPrices.get(item.storeProductId)
+        : undefined,
+    }));
+    const items = [...mappedItems, ...iapItems];
+    return { items, featuredItems: items.filter(item => item.isFeatured) };
+  }),
 
-    set(state => {
-      const items = state.items.map(i =>
-        i.id === itemId ? { ...i, isOwned: true } : i
-      );
-      return { items, featuredItems: items.filter(i => i.isFeatured) };
-    });
-    return true;
-  },
+  applyPurchase: (itemId, ownedQuantity) => set(state => {
+    const items = state.items.map(item => item.id === itemId
+      ? { ...item, ownedQuantity, isOwned: ownedQuantity > 0 }
+      : item);
+    return { items, featuredItems: items.filter(item => item.isFeatured) };
+  }),
 
   setStorePrices: (prices) => set(state => {
     const items = state.items.map(item => ({
