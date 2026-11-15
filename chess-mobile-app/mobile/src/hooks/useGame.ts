@@ -23,7 +23,7 @@ export function useGame() {
     timer, whiteHP, blackHP, playerCards, activeEffects,
     selectedCard, showGameOverModal, gameResult,
     initGame, selectSquare, makeMove, selectCard, useCard,
-    updateTimer, resignGame, resetGame,
+    updateTimer, agreeDraw, resignGame, resetGame,
   } = useGameStore();
 
   const { addGold, addExperience, addGems, recordWin, recordLoss, recordDraw } = usePlayerStore();
@@ -134,7 +134,7 @@ export function useGame() {
 
     // Actions
     startPvPGame, startBotGame, selectSquare, makeMove,
-    selectCard, useCard, resignGame, resetGame,
+    selectCard, useCard, agreeDraw, resignGame, resetGame,
 
     // Computed
     isPlayerTurn: currentTurn === playerColor,

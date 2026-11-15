@@ -3,6 +3,7 @@
 // ============================================================
 
 import { serverConfig } from '../serverConfig';
+import { LeaderboardEntry } from '../../types/player';
 
 interface ApiResponse<T> {
   data: T | null;
@@ -15,6 +16,62 @@ export interface AuthSessionResponse {
   accessToken: string | null;
   refreshToken: string | null;
   emailConfirmationRequired?: boolean;
+}
+
+export interface GameModeDefinition {
+  id: string;
+  code: string;
+  name: string;
+  description: string | null;
+  rules: Record<string, unknown> | null;
+  sortOrder: number;
+  demoPreview: {
+    displayName: string;
+    avatarUrl: string | null;
+    rankPoints: number;
+    tierCode: string;
+    tierName: string;
+    wins: number;
+    losses: number;
+    draws: number;
+  } | null;
+}
+
+export interface RankScreenData {
+  season: {
+    id: string;
+    name: string;
+    startAt: string;
+    endAt: string;
+  };
+  rank: {
+    id: string;
+    rankPoints: number;
+    wins: number;
+    losses: number;
+    draws: number;
+    updatedAt: string;
+    tier: {
+      id: string;
+      code: string;
+      name: string;
+      minPoints: number;
+      order: number;
+    };
+  };
+  history: Array<{
+    id: string;
+    matchId: string | null;
+    pointsBefore: number;
+    pointsChange: number;
+    pointsAfter: number;
+    createdAt: string;
+  }>;
+}
+
+export interface ModeCatalogResponse {
+  modes: GameModeDefinition[];
+  season: RankScreenData['season'] | null;
 }
 
 export interface IapProductDefinition {
@@ -164,7 +221,15 @@ class ApiService {
   }
 
   async getLeaderboard(limit: number = 50) {
-    return this.request('GET', `/player/leaderboard?limit=${limit}`);
+    return this.request<LeaderboardEntry[]>('GET', `/player/leaderboard?limit=${limit}`);
+  }
+
+  async getActiveModes() {
+    return this.request<ModeCatalogResponse>('GET', '/modes');
+  }
+
+  async getMyRank() {
+    return this.request<RankScreenData>('GET', '/rank/me');
   }
 
   // Game endpoints. New PvP games are created by the authenticated

@@ -14,7 +14,6 @@ const ThemeContext = React.createContext<{
   toggle: () => void;
   colors: Palette;
   styles: ReturnType<typeof makeStyles>;
-  onNavigate?: (id: string) => void;
 } | null>(null);
 const useTheme = () => React.useContext(ThemeContext)!;
 
@@ -31,14 +30,6 @@ const MODES = [
   { id: 'blitz', label: '⚡ Blitz (Chớp)' },
   { id: 'rapid', label: '⏱ Rapid (Nhanh)' },
   { id: 'bullet', label: '🔫 Bullet (Siêu tốc)' },
-];
-
-const TABS = [
-  { id: 'home', label: 'Trang chủ', icon: '🛡️' },
-  { id: 'modes', label: 'Chế độ', icon: '⚔️' },
-  { id: 'puzzle', label: 'Giải đố', icon: '🧩' },
-  { id: 'ranking', label: 'Xếp hạng', icon: '🏅' },
-  { id: 'shop', label: 'Cửa hàng', icon: '🛒' },
 ];
 
 type Trend = { dir: 'up' | 'down' | 'same'; n?: number };
@@ -278,34 +269,16 @@ const MyRank = () => {
 // ============================================================
 // TAB BAR
 // ============================================================
-const TabBar = () => {
-  const { styles, colors, onNavigate } = useTheme();
-  return (
-    <View style={styles.tabBar}>
-      {TABS.map(t => {
-        const active = t.id === 'ranking';
-        return (
-          <TouchableOpacity key={t.id} style={styles.tabItem} onPress={() => onNavigate?.(t.id)}>
-            <Text style={[styles.tabIcon, { opacity: active ? 1 : 0.5 }]}>{t.icon}</Text>
-            <Text style={[styles.tabLabel, { color: active ? colors.tabBarActive : colors.tabBarInactive }]}>{t.label}</Text>
-            {active && <View style={styles.tabIndicator} />}
-          </TouchableOpacity>
-        );
-      })}
-    </View>
-  );
-};
-
 // ============================================================
 // SCREEN
 // ============================================================
-const RankingScreen = ({ onNavigate }: { onNavigate?: (id: string) => void }) => {
+const RankingScreen = () => {
   const [isDark, setIsDark] = useState(true);
   const colors: Palette = isDark ? COLORS : LIGHT_COLORS;
   const styles = React.useMemo(() => makeStyles(colors), [isDark]);
   const ctx = React.useMemo(
-    () => ({ isDark, toggle: () => setIsDark(v => !v), colors, styles, onNavigate }),
-    [isDark, styles, onNavigate],
+    () => ({ isDark, toggle: () => setIsDark(v => !v), colors, styles }),
+    [isDark, styles],
   );
 
   return (
@@ -321,7 +294,6 @@ const RankingScreen = ({ onNavigate }: { onNavigate?: (id: string) => void }) =>
           <View style={{ height: 210 }} />
         </ScrollView>
         <MyRank />
-        <TabBar />
       </View>
     </ThemeContext.Provider>
   );
@@ -497,16 +469,6 @@ const makeStyles = (COLORS: Palette) => StyleSheet.create({
   myStreak: { fontSize: 9, color: COLORS.accentRed, fontWeight: FONT_WEIGHT.semibold },
   myLeft: { fontSize: 9, color: COLORS.textMuted },
 
-  // tab bar
-  tabBar: {
-    flexDirection: 'row', backgroundColor: COLORS.tabBarBg, borderTopWidth: 1, borderTopColor: COLORS.border,
-    paddingBottom: SPACING.lg, paddingTop: SPACING.sm, paddingHorizontal: SPACING.sm,
-    position: 'absolute', bottom: 0, left: 0, right: 0,
-  },
-  tabItem: { flex: 1, alignItems: 'center', paddingVertical: SPACING.xs },
-  tabIcon: { fontSize: 20, marginBottom: 2 },
-  tabLabel: { fontSize: 9, fontWeight: FONT_WEIGHT.medium },
-  tabIndicator: { position: 'absolute', top: -SPACING.sm - 1, width: 24, height: 3, backgroundColor: COLORS.primary, borderRadius: 1.5 },
 });
 
 export default RankingScreen;

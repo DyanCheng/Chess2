@@ -70,7 +70,6 @@ export const ChessSquare: React.FC<ChessSquareProps> = React.memo(({
 
   const getBackgroundColor = () => {
     if (isSelected) return COLORS.boardHighlight;
-    if (isLastMove) return COLORS.boardLastMove;
     return isLight ? COLORS.boardLight : COLORS.boardDark;
   };
 
@@ -102,6 +101,13 @@ export const ChessSquare: React.FC<ChessSquareProps> = React.memo(({
       {/* Selected highlight glow */}
       {isSelected && (
         <View style={[styles.selectedOverlay, { width: size, height: size }]} />
+      )}
+
+      {isLastMove && (
+        <View
+          pointerEvents="none"
+          style={[styles.lastMoveOverlay, { width: size, height: size }]}
+        />
       )}
 
       {/* Chess piece */}
@@ -164,6 +170,12 @@ const styles = StyleSheet.create({
   selectedOverlay: {
     position: 'absolute',
     backgroundColor: COLORS.boardHighlight,
+  },
+  lastMoveOverlay: {
+    position: 'absolute',
+    borderWidth: 2,
+    borderColor: COLORS.accent,
+    opacity: 0.65,
   },
   pieceContainer: {
     alignItems: 'center',

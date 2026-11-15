@@ -1,8 +1,11 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
+  ActivityIndicator,
+  Alert,
+  Image,
   KeyboardAvoidingView,
   Platform,
-  SafeAreaView,
   ScrollView,
   StatusBar,
   StyleSheet,
@@ -11,358 +14,356 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { useAuthStore } from '../../store/authStore';
 
+const COLORS = {
+  background: '#101419',
+  panel: '#191E24',
+  input: '#090D12',
+  border: '#202830',
+  gold: '#F6A10A',
+  goldDark: '#8E5100',
+  cyan: '#39D5ED',
+  cream: '#D5C5B5',
+  muted: '#8E8985',
+  white: '#F5F2EF',
+  error: '#FF8D82',
+};
+
+const REMEMBERED_EMAIL_KEY = 'arcane_chess_remembered_email';
+
+type AuthTab = 'login' | 'register';
 export const LoginScreen: React.FC = () => {
-  // Trạng thái theme: false = Dark Theme, true = Light Theme
-  const [isLight, setIsLight] = useState<boolean>(false);
+  const login = useAuthStore(state => state.login);
+  const register = useAuthStore(state => state.register);
+  const enterGuestMode = useAuthStore(state => state.enterGuestMode);
+  const isLoading = useAuthStore(state => state.isLoading);
+  const authError = useAuthStore(state => state.error);
+  const clearAuthError = useAuthStore(state => state.clearError);
 
-  // Tab Đăng nhập / Đăng ký
-  const [activeTab, setActiveTab] = useState<'login' | 'register'>('login');
+  const [activeTab, setActiveTab] = useState<AuthTab>('login');
+  const [username, setUsername] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [rememberEmail, setRememberEmail] = useState(true);
+  const [formError, setFormError] = useState<string | null>(null);
 
-  // Form states
-  const [email, setEmail] = useState<string>('arcane_grandmaster@chess.gg');
-  const [password, setPassword] = useState<string>('12345678');
-  const [showPassword, setShowPassword] = useState<boolean>(false);
-  const [rememberMe, setRememberMe] = useState<boolean>(true);
+  useEffect(() => {
+    let isMounted = true;
 
-  // Hệ thống màu sắc Dark & Light theo đúng thiết kế
-  const theme = isLight
-    ? {
-        bg: '#F4F6FB',
-        serverBarText: '#2563EB',
-        pingText: '#2563EB',
-        logoText: '#C25E00',
-        subTagText: '#2563EB',
-        tabContainerBg: '#FFFFFF',
-        tabActiveBg: '#EA580C',
-        tabActiveText: '#FFFFFF',
-        tabInactiveText: '#475569',
-        cardBg: '#FFFFFF',
-        cardBorder: '#E2E8F0',
-        labelPrimary: '#1E293B',
-        labelSub: '#3B82F6',
-        inputBg: '#F8FAFC',
-        inputText: '#0F172A',
-        placeholder: '#94A3B8',
-        iconColor: '#64748B',
-        checkboxActive: '#EA580C',
-        checkboxInactive: '#CBD5E1',
-        textMuted: '#64748B',
-        linkText: '#1E293B',
-        ctaBg: '#EA580C',
-        ctaText: '#FFFFFF',
-        dividerText: '#64748B',
-        socialBtnBg: '#FFFFFF',
-        socialBtnBorder: '#E2E8F0',
-        guestLink: '#2563EB',
-        footerBadgeBg: '#EEF2FF',
-        footerBadgeText: '#3730A3',
-        footerSubText: '#94A3B8',
-        shadowColor: '#000000',
+    AsyncStorage.getItem(REMEMBERED_EMAIL_KEY)
+      .then(savedEmail => {
+        if (isMounted && savedEmail) setEmail(savedEmail);
+      })
+      .catch(() => {
+        if (isMounted) setFormError('Không thể tải email đã lưu trên thiết bị.');
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  const changeTab = (tab: AuthTab) => {
+    setActiveTab(tab);
+    setFormError(null);
+    clearAuthError();
+  };
+
+  const handleSubmit = async () => {
+    setFormError(null);
+    clearAuthError();
+
+    const trimmedEmail = email.trim();
+    if (!trimmedEmail || !password) {
+      setFormError('Vui lòng nhập email và mật khẩu.');
+      return;
+    }
+
+    if (activeTab === 'register') {
+      if (!username.trim()) {
+        setFormError('Vui lòng nhập tên hiển thị.');
+        return;
       }
-    : {
-        bg: '#0B0F17',
-        serverBarText: '#38BDF8',
-        pingText: '#38BDF8',
-        logoText: '#F59E0B',
-        subTagText: '#38BDF8',
-        tabContainerBg: '#131B28',
-        tabActiveBg: '#F59E0B',
-        tabActiveText: '#0B0F17',
-        tabInactiveText: '#94A3B8',
-        cardBg: '#111723',
-        cardBorder: '#1E293B',
-        labelPrimary: '#94A3B8',
-        labelSub: '#38BDF8',
-        inputBg: '#090D14',
-        inputText: '#F8FAFC',
-        placeholder: '#475569',
-        iconColor: '#F59E0B',
-        checkboxActive: '#F59E0B',
-        checkboxInactive: '#334155',
-        textMuted: '#94A3B8',
-        linkText: '#CBD5E1',
-        ctaBg: '#F59E0B',
-        ctaText: '#0B0F17',
-        dividerText: '#64748B',
-        socialBtnBg: '#161F30',
-        socialBtnBorder: '#1E293B',
-        guestLink: '#F8FAFC',
-        footerBadgeBg: '#162235',
-        footerBadgeText: '#38BDF8',
-        footerSubText: '#64748B',
-        shadowColor: '#F59E0B',
-      };
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
+        setFormError('Vui lòng nhập địa chỉ email hợp lệ.');
+        return;
+      }
+      if (password.length < 8) {
+        setFormError('Mật khẩu cần có ít nhất 8 ký tự.');
+        return;
+      }
+      if (password !== confirmPassword) {
+        setFormError('Mật khẩu xác nhận không khớp.');
+        return;
+      }
+
+      try {
+        const confirmationRequired = await register(trimmedEmail, password, username.trim());
+        if (confirmationRequired) {
+          setActiveTab('login');
+          setPassword('');
+          setConfirmPassword('');
+          Alert.alert('Kiểm tra email', 'Hãy xác nhận email trước khi đăng nhập.');
+          return;
+        }
+      } catch (error) {
+        setFormError(error instanceof Error ? error.message : 'Đăng ký thất bại.');
+      }
+      return;
+    }
+
+    try {
+      await login(trimmedEmail, password);
+      try {
+        if (rememberEmail) {
+          await AsyncStorage.setItem(REMEMBERED_EMAIL_KEY, trimmedEmail);
+        } else {
+          await AsyncStorage.removeItem(REMEMBERED_EMAIL_KEY);
+        }
+      } catch {
+        Alert.alert(
+          'Đăng nhập thành công',
+          'Không thể lưu tùy chọn ghi nhớ email trên thiết bị này.',
+        );
+        return;
+      }
+    } catch (error) {
+      setFormError(error instanceof Error ? error.message : 'Đăng nhập thất bại.');
+    }
+  };
+
+  const handleForgotPassword = () => {
+    Alert.alert(
+      'Chưa hỗ trợ khôi phục mật khẩu',
+      'Máy chủ hiện chưa có chức năng gửi email đặt lại mật khẩu.',
+    );
+  };
+
+  const title = activeTab === 'login' ? 'VÀO BÀN CỜ' : 'TẠO TÀI KHOẢN';
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: theme.bg }]}>
-      <StatusBar
-        barStyle={isLight ? 'dark-content' : 'light-content'}
-        backgroundColor={theme.bg}
-      />
-
-      {/* TOP BAR: SERVER STATUS & THEME TOGGLE */}
+    <SafeAreaView style={styles.safeArea}>
+      <StatusBar barStyle="light-content" backgroundColor={COLORS.background} />
       <View style={styles.topBar}>
         <View style={styles.serverInfo}>
-          <View style={[styles.statusDot, { backgroundColor: theme.serverBarText }]} />
-          <Text style={[styles.serverText, { color: theme.serverBarText }]}>ARCANE-US-EAST</Text>
+          <View style={styles.statusDot} />
+          <Text style={styles.serverName}>ARCANE CHESS</Text>
         </View>
-
-        <View style={styles.topRight}>
-          <TouchableOpacity
-            style={[styles.themeBtn, { backgroundColor: isLight ? '#E2E8F0' : '#1E293B' }]}
-            onPress={() => setIsLight(!isLight)}
-          >
-            <Text style={{ fontSize: 11, color: theme.serverBarText, fontWeight: '700' }}>
-              {isLight ? '☀️ LIGHT' : '🌙 DARK'}
-            </Text>
-          </TouchableOpacity>
-          <Text style={[styles.pingText, { color: theme.pingText }]}>28ms 📶</Text>
-        </View>
+        <Text style={styles.serverLabel}>TACTICAL RPG</Text>
       </View>
 
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        style={{ flex: 1 }}
+        style={styles.keyboardArea}
       >
         <ScrollView
           contentContainerStyle={styles.scrollContent}
+          keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
-          {/* LOGO & TITLE */}
-          <View style={styles.brandingContainer}>
+          <View style={styles.branding}>
             <View style={styles.logoFrame}>
-              <View style={[styles.logoPlaceholder, { borderColor: theme.logoText }]}>
-                <Text style={{ fontSize: 32 }}>⚔️</Text>
-                <Text style={[styles.logoMiniText, { color: theme.logoText }]}>CHESS</Text>
-              </View>
-              {isLight && (
-                <View style={styles.ivoryTag}>
-                  <Text style={styles.ivoryTagText}>IVORY ARCANE</Text>
-                </View>
-              )}
+              <Image
+                source={require('../../assets/images/arcane-chess-logo.png')}
+                style={styles.logo}
+                accessibilityLabel="Biểu tượng Arcane Chess"
+              />
             </View>
-
-            <Text style={[styles.mainTitle, { color: theme.logoText }]}>ARCANE CHESS</Text>
-            <Text style={[styles.subTitle, { color: theme.subTagText }]}>
-              ✦ TACTICAL RPG & STRATEGY ✦
-            </Text>
+            <Text style={styles.brandTitle}>ARCANE CHESS</Text>
+            <Text style={styles.tagline}>✦  TACTICAL RPG & STRATEGY  ✦</Text>
           </View>
 
-          {/* TAB ĐĂNG NHẬP / ĐĂNG KÝ */}
-          <View style={[styles.tabContainer, { backgroundColor: theme.tabContainerBg }]}>
+          <View style={styles.tabs}>
             <TouchableOpacity
-              style={[
-                styles.tabBtn,
-                activeTab === 'login' && { backgroundColor: theme.tabActiveBg },
-              ]}
-              onPress={() => setActiveTab('login')}
+              accessibilityRole="tab"
+              accessibilityState={{ selected: activeTab === 'login' }}
+              style={[styles.tab, activeTab === 'login' && styles.activeTab]}
+              onPress={() => changeTab('login')}
             >
-              <Text
-                style={[
-                  styles.tabBtnText,
-                  {
-                    color:
-                      activeTab === 'login' ? theme.tabActiveText : theme.tabInactiveText,
-                  },
-                ]}
-              >
-                ⚔️ Đăng Nhập
+              <Text style={[styles.tabText, activeTab === 'login' && styles.activeTabText]}>
+                ⚔  Đăng Nhập
               </Text>
             </TouchableOpacity>
-
             <TouchableOpacity
-              style={[
-                styles.tabBtn,
-                activeTab === 'register' && { backgroundColor: theme.tabActiveBg },
-              ]}
-              onPress={() => setActiveTab('register')}
+              accessibilityRole="tab"
+              accessibilityState={{ selected: activeTab === 'register' }}
+              style={[styles.tab, activeTab === 'register' && styles.activeTab]}
+              onPress={() => changeTab('register')}
             >
-              <Text
-                style={[
-                  styles.tabBtnText,
-                  {
-                    color:
-                      activeTab === 'register' ? theme.tabActiveText : theme.tabInactiveText,
-                  },
-                ]}
-              >
-                🛡️ Đăng Ký
+              <Text style={[styles.tabText, activeTab === 'register' && styles.activeTabText]}>
+                ✥  Đăng Ký
               </Text>
             </TouchableOpacity>
           </View>
 
-          {/* FORM CARD */}
-          <View
-            style={[
-              styles.formCard,
-              {
-                backgroundColor: theme.cardBg,
-                borderColor: theme.cardBorder,
-                shadowColor: theme.shadowColor,
-              },
-            ]}
-          >
-            {/* INPUT EMAIL */}
+          <View style={styles.formCard}>
+            {activeTab === 'register' && (
+              <View style={styles.inputGroup}>
+                <View style={styles.labelRow}>
+                  <Text style={styles.fieldLabel}>TÊN HIỂN THỊ</Text>
+                  <Text style={styles.hint}>Tên trong game</Text>
+                </View>
+                <View style={styles.inputBox}>
+                  <Text style={styles.inputIcon}>♙</Text>
+                  <TextInput
+                    accessibilityLabel="Tên hiển thị"
+                    style={styles.textInput}
+                    value={username}
+                    onChangeText={setUsername}
+                    placeholder="Nhập tên của bạn"
+                    placeholderTextColor={COLORS.muted}
+                    autoCapitalize="words"
+                    returnKeyType="next"
+                  />
+                </View>
+              </View>
+            )}
+
             <View style={styles.inputGroup}>
               <View style={styles.labelRow}>
-                <Text style={[styles.fieldLabel, { color: theme.labelPrimary }]}>
-                  TÊN ĐĂNG NHẬP / EMAIL
-                </Text>
-                <Text style={[styles.subLabel, { color: theme.labelSub }]}>
-                  Cấp độ Hiệp Sĩ
-                </Text>
+                <Text style={styles.fieldLabel}>EMAIL TÀI KHOẢN</Text>
+                <Text style={styles.hint}>Cấp độ Hiệp Sĩ</Text>
               </View>
-              <View style={[styles.inputBox, { backgroundColor: theme.inputBg }]}>
-                <Text style={[styles.inputIcon, { color: theme.iconColor }]}>🛡️</Text>
+              <View style={styles.inputBox}>
+                <Text style={styles.inputIcon}>♙</Text>
                 <TextInput
-                  style={[styles.textInput, { color: theme.inputText }]}
+                  accessibilityLabel="Email tài khoản"
+                  style={styles.textInput}
                   value={email}
                   onChangeText={setEmail}
-                  placeholder="Nhập tên đăng nhập hoặc email..."
-                  placeholderTextColor={theme.placeholder}
+                  placeholder="name@example.com"
+                  placeholderTextColor={COLORS.muted}
+                  keyboardType="email-address"
                   autoCapitalize="none"
+                  autoCorrect={false}
+                  returnKeyType="next"
                 />
               </View>
             </View>
 
-            {/* INPUT PASSWORD */}
             <View style={styles.inputGroup}>
               <View style={styles.labelRow}>
-                <Text style={[styles.fieldLabel, { color: theme.labelPrimary }]}>
-                  MẬT KHẨU
-                </Text>
-                <Text style={[styles.subLabel, { color: theme.textMuted }]}>
-                  Tối thiểu 8 ký tự
-                </Text>
+                <Text style={styles.fieldLabel}>MẬT KHẨU</Text>
+                <Text style={styles.hint}>Tối thiểu 8 ký tự</Text>
               </View>
-              <View style={[styles.inputBox, { backgroundColor: theme.inputBg }]}>
-                <Text style={[styles.inputIcon, { color: theme.iconColor }]}>🔒</Text>
+              <View style={styles.inputBox}>
+                <Text style={styles.inputIcon}>♙</Text>
                 <TextInput
-                  style={[styles.textInput, { color: theme.inputText }]}
+                  accessibilityLabel="Mật khẩu"
+                  style={styles.textInput}
                   value={password}
                   onChangeText={setPassword}
-                  placeholder="Nhập mật khẩu..."
-                  placeholderTextColor={theme.placeholder}
+                  placeholder="Nhập mật khẩu"
+                  placeholderTextColor={COLORS.muted}
                   secureTextEntry={!showPassword}
+                  autoCapitalize="none"
+                  returnKeyType={activeTab === 'register' ? 'next' : 'go'}
+                  onSubmitEditing={activeTab === 'login' ? handleSubmit : undefined}
                 />
-                <TouchableOpacity onPress={() => setShowPassword(!showPassword)}>
-                  <Text style={[styles.inputIconRight, { color: theme.iconColor }]}>
-                    {showPassword ? '👁️' : '👁️‍🗨️'}
-                  </Text>
+                <TouchableOpacity
+                  accessibilityRole="button"
+                  accessibilityLabel={showPassword ? 'Ẩn mật khẩu' : 'Hiện mật khẩu'}
+                  onPress={() => setShowPassword(value => !value)}
+                  hitSlop={8}
+                >
+                  <Text style={styles.visibilityIcon}>{showPassword ? '◉' : '◎'}</Text>
                 </TouchableOpacity>
               </View>
             </View>
 
-            {/* REMEMBER & FORGOT PASSWORD */}
-            <View style={styles.actionRow}>
-              <TouchableOpacity
-                style={styles.checkboxContainer}
-                onPress={() => setRememberMe(!rememberMe)}
-              >
-                <View
-                  style={[
-                    styles.checkbox,
-                    {
-                      backgroundColor: rememberMe ? theme.checkboxActive : 'transparent',
-                      borderColor: theme.checkboxActive,
-                    },
-                  ]}
-                >
-                  {rememberMe && <Text style={styles.checkmark}>✓</Text>}
+            {activeTab === 'register' && (
+              <View style={styles.inputGroup}>
+                <View style={styles.labelRow}>
+                  <Text style={styles.fieldLabel}>XÁC NHẬN MẬT KHẨU</Text>
                 </View>
-                <Text style={[styles.rememberText, { color: theme.linkText }]}>
-                  Ghi nhớ đăng nhập
-                </Text>
-              </TouchableOpacity>
+                <View style={styles.inputBox}>
+                  <Text style={styles.inputIcon}>♙</Text>
+                  <TextInput
+                    accessibilityLabel="Xác nhận mật khẩu"
+                    style={styles.textInput}
+                    value={confirmPassword}
+                    onChangeText={setConfirmPassword}
+                    placeholder="Nhập lại mật khẩu"
+                    placeholderTextColor={COLORS.muted}
+                    secureTextEntry={!showPassword}
+                    autoCapitalize="none"
+                    returnKeyType="go"
+                    onSubmitEditing={handleSubmit}
+                  />
+                </View>
+              </View>
+            )}
 
-              <TouchableOpacity>
-                <Text style={[styles.forgotPasswordText, { color: theme.linkText }]}>
-                  Quên mật khẩu?
-                </Text>
-              </TouchableOpacity>
-            </View>
+            {activeTab === 'login' ? (
+              <View style={styles.actionRow}>
+                <TouchableOpacity
+                  accessibilityRole="checkbox"
+                  accessibilityState={{ checked: rememberEmail }}
+                  style={styles.rememberButton}
+                  onPress={() => setRememberEmail(value => !value)}
+                >
+                  <View style={[styles.checkbox, rememberEmail && styles.checkedBox]}>
+                    {rememberEmail && <Text style={styles.checkmark}>✓</Text>}
+                  </View>
+                  <Text style={styles.rememberText}>Ghi nhớ email</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={handleForgotPassword}>
+                  <Text style={styles.forgotText}>Quên mật khẩu?</Text>
+                </TouchableOpacity>
+              </View>
+            ) : null}
 
-            {/* CTA BUTTON */}
-            <TouchableOpacity style={[styles.ctaButton, { backgroundColor: theme.ctaBg }]}>
-              <Text style={[styles.ctaButtonText, { color: theme.ctaText }]}>
-                ⚔️ VÀO BÀN CỜ ›
+            {(formError || authError) && (
+              <Text accessibilityRole="alert" style={styles.errorText}>
+                {formError || authError}
               </Text>
+            )}
+
+            <TouchableOpacity
+              accessibilityRole="button"
+              disabled={isLoading}
+              style={[styles.submitButton, isLoading && styles.submitButtonDisabled]}
+              onPress={handleSubmit}
+            >
+              {isLoading ? (
+                <ActivityIndicator color={COLORS.goldDark} />
+              ) : (
+                <Text style={styles.submitButtonText}>
+                  ⚔  {activeTab === 'login' ? title : 'TẠO TÀI KHOẢN'}
+                </Text>
+              )}
             </TouchableOpacity>
           </View>
 
-          {/* SOCIAL LOGIN DIVIDER */}
           <View style={styles.dividerRow}>
             <View style={styles.dividerLine} />
-            <Text style={[styles.dividerLabel, { color: theme.dividerText }]}>
-              ✦ HOẶC TIẾP TỤC VỚI ✦
-            </Text>
+            <Text style={styles.dividerText}>◆  HOẶC TIẾP TỤC VỚI  ◆</Text>
             <View style={styles.dividerLine} />
           </View>
 
-          {/* SOCIAL ICONS (4 Nút) */}
-          <View style={styles.socialRow}>
-            <TouchableOpacity
-              style={[
-                styles.socialBtn,
-                { backgroundColor: theme.socialBtnBg, borderColor: theme.socialBtnBorder },
-              ]}
-            >
-              <Text style={{ fontSize: 18, fontWeight: 'bold', color: '#EA4335' }}>G</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[
-                styles.socialBtn,
-                { backgroundColor: theme.socialBtnBg, borderColor: theme.socialBtnBorder },
-              ]}
-            >
-              <Text style={{ fontSize: 18, color: theme.inputText }}></Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[
-                styles.socialBtn,
-                { backgroundColor: theme.socialBtnBg, borderColor: theme.socialBtnBorder },
-              ]}
-            >
-              <Text style={{ fontSize: 18, color: '#1877F2' }}>f</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[
-                styles.socialBtn,
-                { backgroundColor: theme.socialBtnBg, borderColor: theme.socialBtnBorder },
-              ]}
-            >
-              <Text style={{ fontSize: 18, color: '#06B6D4' }}>♟️</Text>
-              <View style={styles.notificationDot} />
-            </TouchableOpacity>
+          <View style={styles.providerRow} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
+            <View style={styles.providerTile}><Text style={styles.googleIcon}>G</Text></View>
+            <View style={styles.providerTile}><Text style={styles.appleIcon}>●</Text></View>
+            <View style={styles.providerTile}><Text style={styles.facebookIcon}>f</Text></View>
+            <View style={styles.providerTile}><Text style={styles.chessIcon}>♜</Text></View>
           </View>
+          <Text style={styles.providerNote}>Đăng nhập bên thứ ba sẽ sớm ra mắt</Text>
 
-          {/* GUEST ACCESS */}
-          <View style={styles.guestSection}>
-            <TouchableOpacity>
-              <Text style={[styles.guestLinkText, { color: theme.guestLink }]}>
-                Chơi Ngay Không Cần Tài Khoản (Khách) →
-              </Text>
-            </TouchableOpacity>
-            <Text style={[styles.guestNotice, { color: theme.textMuted }]}>
-              Tiến trình xếp hạng và trang phục thần thoại sẽ được lưu tạm thời trên thiết bị này.
-            </Text>
-          </View>
-
-          {/* SECURITY FOOTER */}
-          <View style={[styles.securityBadge, { backgroundColor: theme.footerBadgeBg }]}>
-            <Text style={[styles.securityBadgeText, { color: theme.footerBadgeText }]}>
-              🛡️ MÃ HOÁ KẾT NỐI ARCANE SSL 256-BIT
-            </Text>
-          </View>
-          <Text style={[styles.engineText, { color: theme.footerSubText }]}>
-            v1.4.2 Arcane Engine • Grandmaster Network
+          <TouchableOpacity style={styles.guestButton} onPress={enterGuestMode}>
+            <Text style={styles.guestText}>Chơi ngay không cần tài khoản (Khách)  →</Text>
+          </TouchableOpacity>
+          <Text style={styles.guestNote}>
+            Tiến trình chơi khách được lưu tạm thời trên thiết bị này.
           </Text>
 
-          <View style={{ height: 20 }} />
+          <View style={styles.footer}>
+            <Text style={styles.securityText}>◇  KẾT NỐI ĐƯỢC BẢO VỆ BỞI ARCANE</Text>
+            <Text style={styles.versionText}>Arcane Chess  •  Grandmaster Network</Text>
+          </View>
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -372,278 +373,312 @@ export const LoginScreen: React.FC = () => {
 export default LoginScreen;
 
 const styles = StyleSheet.create({
-  container: {
+  safeArea: {
     flex: 1,
+    backgroundColor: COLORS.background,
   },
   topBar: {
+    minHeight: 44,
+    paddingHorizontal: 18,
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
+    justifyContent: 'space-between',
   },
   serverInfo: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 8,
   },
   statusDot: {
-    width: 7,
-    height: 7,
+    width: 8,
+    height: 8,
     borderRadius: 4,
-    marginRight: 6,
+    backgroundColor: COLORS.cyan,
   },
-  serverText: {
-    fontSize: 11,
-    fontWeight: '800',
-    letterSpacing: 0.8,
-  },
-  topRight: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  themeBtn: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 8,
-  },
-  pingText: {
-    fontSize: 11,
-    fontWeight: '700',
-  },
-  scrollContent: {
-    paddingHorizontal: 20,
-    alignItems: 'center',
-  },
-  brandingContainer: {
-    alignItems: 'center',
-    marginTop: 10,
-    marginBottom: 20,
-  },
-  logoFrame: {
-    position: 'relative',
-    alignItems: 'center',
-    marginBottom: 10,
-  },
-  logoPlaceholder: {
-    width: 86,
-    height: 86,
-    borderRadius: 18,
-    backgroundColor: '#0F172A',
-    borderWidth: 2,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  logoMiniText: {
-    fontSize: 10,
-    fontWeight: '900',
-    letterSpacing: 1.5,
-  },
-  ivoryTag: {
-    position: 'absolute',
-    bottom: -10,
-    backgroundColor: '#C25E00',
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 6,
-  },
-  ivoryTagText: {
-    color: '#FFFFFF',
-    fontSize: 9,
-    fontWeight: '800',
-  },
-  mainTitle: {
-    fontSize: 22,
-    fontWeight: '900',
-    letterSpacing: 1.5,
-    marginTop: 10,
-  },
-  subTitle: {
-    fontSize: 10,
-    fontWeight: '800',
-    letterSpacing: 1.2,
-    marginTop: 4,
-  },
-  tabContainer: {
-    flexDirection: 'row',
-    width: '100%',
-    borderRadius: 12,
-    padding: 4,
-    marginBottom: 16,
-  },
-  tabBtn: {
-    flex: 1,
-    paddingVertical: 10,
-    borderRadius: 8,
-    alignItems: 'center',
-  },
-  tabBtnText: {
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  formCard: {
-    width: '100%',
-    borderRadius: 20,
-    padding: 16,
-    borderWidth: 1,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 10,
-    elevation: 3,
-  },
-  inputGroup: {
-    marginBottom: 14,
-  },
-  labelRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 6,
-  },
-  fieldLabel: {
-    fontSize: 11,
-    fontWeight: '800',
-    letterSpacing: 0.5,
-  },
-  subLabel: {
-    fontSize: 10,
-    fontWeight: '600',
-  },
-  inputBox: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    height: 48,
-  },
-  inputIcon: {
-    fontSize: 14,
-    marginRight: 8,
-  },
-  textInput: {
-    flex: 1,
-    fontSize: 13,
-    fontWeight: '500',
-  },
-  inputIconRight: {
-    fontSize: 16,
-    paddingHorizontal: 4,
-  },
-  actionRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginTop: 2,
-    marginBottom: 18,
-  },
-  checkboxContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  checkbox: {
-    width: 16,
-    height: 16,
-    borderRadius: 4,
-    borderWidth: 1.5,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 6,
-  },
-  checkmark: {
-    color: '#000',
-    fontSize: 11,
-    fontWeight: '900',
-  },
-  rememberText: {
+  serverName: {
+    color: COLORS.cyan,
     fontSize: 12,
-    fontWeight: '500',
+    fontWeight: '800',
+    letterSpacing: 1.4,
   },
-  forgotPasswordText: {
-    fontSize: 12,
-    textDecorationLine: 'underline',
-    fontWeight: '500',
-  },
-  ctaButton: {
-    height: 48,
-    borderRadius: 12,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  ctaButtonText: {
-    fontSize: 14,
-    fontWeight: '900',
-    letterSpacing: 1.2,
-  },
-  dividerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    width: '100%',
-    marginVertical: 18,
-  },
-  dividerLine: {
-    flex: 1,
-    height: 1,
-    backgroundColor: '#33415530',
-  },
-  dividerLabel: {
-    marginHorizontal: 10,
+  serverLabel: {
+    color: COLORS.cream,
     fontSize: 10,
     fontWeight: '700',
     letterSpacing: 1,
   },
-  socialRow: {
-    flexDirection: 'row',
-    gap: 12,
-    width: '100%',
-    justifyContent: 'space-between',
-    marginBottom: 20,
-  },
-  socialBtn: {
+  keyboardArea: {
     flex: 1,
-    height: 44,
-    borderRadius: 12,
-    borderWidth: 1,
+  },
+  scrollContent: {
+    flexGrow: 1,
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingBottom: 24,
+  },
+  branding: {
+    alignItems: 'center',
+    marginTop: 12,
+    marginBottom: 22,
+  },
+  logoFrame: {
+    width: 126,
+    height: 126,
+    borderRadius: 24,
+    padding: 6,
+    backgroundColor: '#222832',
+    marginBottom: 14,
+  },
+  logo: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 19,
+  },
+  brandTitle: {
+    color: '#FFC477',
+    fontSize: 29,
+    fontWeight: '900',
+    letterSpacing: 1.7,
+    textShadowColor: 'rgba(246, 161, 10, 0.3)',
+    textShadowOffset: { width: 0, height: 2 },
+    textShadowRadius: 12,
+  },
+  tagline: {
+    color: COLORS.cyan,
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 1.2,
+    marginTop: 5,
+  },
+  tabs: {
+    width: '100%',
+    flexDirection: 'row',
+    padding: 4,
+    borderRadius: 16,
+    backgroundColor: '#080C11',
+    marginBottom: 16,
+  },
+  tab: {
+    minHeight: 48,
+    flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    position: 'relative',
+    borderRadius: 12,
   },
-  notificationDot: {
-    position: 'absolute',
-    top: 6,
-    right: 8,
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: '#06B6D4',
+  activeTab: {
+    backgroundColor: COLORS.gold,
   },
-  guestSection: {
-    alignItems: 'center',
-    marginBottom: 16,
-    paddingHorizontal: 12,
-  },
-  guestLinkText: {
-    fontSize: 13,
+  tabText: {
+    color: COLORS.cream,
+    fontSize: 15,
     fontWeight: '700',
-    marginBottom: 4,
-    textAlign: 'center',
   },
-  guestNotice: {
-    fontSize: 10,
-    textAlign: 'center',
-    lineHeight: 14,
+  activeTabText: {
+    color: COLORS.goldDark,
   },
-  securityBadge: {
-    paddingHorizontal: 12,
-    paddingVertical: 5,
-    borderRadius: 16,
-    marginBottom: 6,
+  formCard: {
+    width: '100%',
+    borderRadius: 20,
+    padding: 18,
+    backgroundColor: COLORS.panel,
+    borderWidth: 1,
+    borderColor: '#20262D',
   },
-  securityBadgeText: {
-    fontSize: 9,
+  inputGroup: {
+    marginBottom: 15,
+  },
+  labelRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 7,
+  },
+  fieldLabel: {
+    color: COLORS.cream,
+    fontSize: 11,
     fontWeight: '800',
-    letterSpacing: 0.5,
+    letterSpacing: 0.45,
   },
-  engineText: {
-    fontSize: 9,
-    fontWeight: '600',
+  hint: {
+    color: COLORS.cyan,
+    fontSize: 10,
+  },
+  inputBox: {
+    height: 50,
+    borderRadius: 12,
+    paddingHorizontal: 13,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.input,
+  },
+  inputIcon: {
+    width: 24,
+    color: '#FFC477',
+    fontSize: 19,
+    fontWeight: '700',
+  },
+  textInput: {
+    flex: 1,
+    height: '100%',
+    color: COLORS.white,
+    fontSize: 14,
+    paddingVertical: 0,
+  },
+  visibilityIcon: {
+    color: COLORS.cream,
+    fontSize: 21,
+    paddingHorizontal: 4,
+  },
+  actionRow: {
+    minHeight: 38,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: -1,
+    marginBottom: 15,
+  },
+  rememberButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  checkbox: {
+    width: 20,
+    height: 20,
+    borderWidth: 1,
+    borderColor: COLORS.gold,
+    borderRadius: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 7,
+  },
+  checkedBox: {
+    backgroundColor: COLORS.gold,
+  },
+  checkmark: {
+    color: COLORS.goldDark,
+    fontSize: 14,
+    fontWeight: '900',
+    lineHeight: 18,
+  },
+  rememberText: {
+    color: COLORS.cream,
+    fontSize: 12,
+  },
+  forgotText: {
+    color: '#FFC477',
+    fontSize: 12,
+    textDecorationLine: 'underline',
+  },
+  errorText: {
+    color: COLORS.error,
+    fontSize: 12,
+    lineHeight: 18,
+    marginBottom: 12,
+  },
+  submitButton: {
+    minHeight: 54,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: COLORS.gold,
+  },
+  submitButtonDisabled: {
+    opacity: 0.7,
+  },
+  submitButtonText: {
+    color: COLORS.goldDark,
+    fontSize: 18,
+    fontWeight: '900',
+    letterSpacing: 0.8,
+  },
+  dividerRow: {
+    width: '100%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginTop: 22,
+    marginBottom: 18,
+  },
+  dividerLine: {
+    height: 1,
+    flex: 1,
+    backgroundColor: '#38414A',
+  },
+  dividerText: {
+    color: COLORS.cream,
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 0.8,
+  },
+  providerRow: {
+    width: '100%',
+    flexDirection: 'row',
+    gap: 10,
+  },
+  providerTile: {
+    height: 52,
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 14,
+    backgroundColor: '#1C2229',
+  },
+  googleIcon: {
+    color: '#E8EAED',
+    fontSize: 27,
+    fontWeight: '700',
+  },
+  appleIcon: {
+    color: '#E8EAED',
+    fontSize: 22,
+  },
+  facebookIcon: {
+    color: '#E8EAED',
+    fontSize: 30,
+    fontWeight: '900',
+  },
+  chessIcon: {
+    color: COLORS.cyan,
+    fontSize: 28,
+  },
+  providerNote: {
+    color: COLORS.muted,
+    fontSize: 10,
+    marginTop: 6,
+  },
+  guestButton: {
+    marginTop: 21,
+    paddingVertical: 4,
+  },
+  guestText: {
+    color: COLORS.cream,
+    fontSize: 14,
+    textAlign: 'center',
+    textDecorationLine: 'underline',
+    textDecorationColor: '#285767',
+  },
+  guestNote: {
+    maxWidth: 340,
+    color: COLORS.muted,
+    fontSize: 11,
+    textAlign: 'center',
+    lineHeight: 16,
+    marginTop: 4,
+  },
+  footer: {
+    alignItems: 'center',
+    marginTop: 32,
+    gap: 6,
+  },
+  securityText: {
+    color: COLORS.cream,
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 0.7,
+  },
+  versionText: {
+    color: '#706B68',
+    fontSize: 11,
+    fontWeight: '700',
   },
 });

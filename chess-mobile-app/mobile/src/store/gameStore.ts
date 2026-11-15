@@ -51,6 +51,7 @@ interface GameStore {
   selectCard: (card: CardInHand | null) => void;
   useCard: (card: CardInHand) => void;
   updateTimer: () => void;
+  agreeDraw: () => void;
   resignGame: () => void;
   resetGame: () => void;
   setBoard: (board: BoardState) => void;
@@ -352,6 +353,17 @@ export const useGameStore = create<GameStore>()((set, get) => ({
         }
       }
       return { timer: newTimer };
+    });
+  },
+
+  agreeDraw: () => {
+    if (get().status !== 'playing') return;
+    set({
+      status: 'finished',
+      gameResult: { winner: 'draw', reason: 'Hòa theo thỏa thuận' },
+      showGameOverModal: true,
+      selectedSquare: null,
+      validMoves: [],
     });
   },
 

@@ -3,15 +3,27 @@
 // ============================================================
 
 import React, { useMemo } from 'react';
-import { View, StyleSheet, Dimensions } from 'react-native';
+import { Text, View, StyleSheet, useWindowDimensions } from 'react-native';
 import { COLORS, SPACING, BORDER_RADIUS, SHADOWS } from '../../constants/theme';
 import { BoardState, BoardPosition } from '../../types/chess';
-import { BOARD_SIZE, BOARD_PADDING } from '../../constants/chess';
+import { BOARD_SIZE, BOARD_PADDING, COLUMNS } from '../../constants/chess';
 import { ChessSquare } from './ChessSquare';
 
-const SCREEN_WIDTH = Dimensions.get('window').width;
-const BOARD_WIDTH = SCREEN_WIDTH - SPACING.xl * 2;
-const SQUARE_SIZE = (BOARD_WIDTH - BOARD_PADDING * 2) / BOARD_SIZE;
+const BOARD_FRAME_GUTTER = 10;
+const MAX_BOARD_HEIGHT_RATIO = 0.42;
+
+export const calculateBoardSquareSize = (
+  screenWidth: number,
+  screenHeight: number,
+  maxBoardWidth?: number,
+) => {
+  const screenAvailableWidth = Math.max(0, screenWidth - SPACING.xl * 2);
+  const availableWidth = maxBoardWidth === undefined
+    ? screenAvailableWidth
+    : Math.min(screenAvailableWidth, Math.max(0, maxBoardWidth));
+  const boardSize = Math.min(availableWidth, screenHeight * MAX_BOARD_HEIGHT_RATIO);
+  return Math.max(1, (boardSize - BOARD_FRAME_GUTTER) / BOARD_SIZE);
+};
 
 interface ChessBoardProps {
   board: BoardState;
@@ -21,6 +33,7 @@ interface ChessBoardProps {
   onSquarePress: (pos: BoardPosition) => void;
   isFlipped?: boolean;
   isInteractive?: boolean;
+  maxBoardWidth?: number;
 }
 
 export const ChessBoard: React.FC<ChessBoardProps> = ({
@@ -31,7 +44,11 @@ export const ChessBoard: React.FC<ChessBoardProps> = ({
   onSquarePress,
   isFlipped = false,
   isInteractive = true,
+  maxBoardWidth,
 }) => {
+  const { width, height } = useWindowDimensions();
+  const squareSize = calculateBoardSquareSize(width, height, maxBoardWidth);
+
   const isSelectedSquare = (row: number, col: number) => {
     return selectedSquare?.row === row && selectedSquare?.col === col;
   };
@@ -91,7 +108,7 @@ export const ChessBoard: React.FC<ChessBoardProps> = ({
                       isValidMove={isValidMove}
                       isLastMove={isLastMove}
                       isCapture={isValidMove && piece !== null}
-                      size={SQUARE_SIZE}
+                      size={squareSize}
                       onPress={() => isInteractive && onSquarePress({ row, col })}
                     />
                   );
@@ -105,18 +122,14 @@ export const ChessBoard: React.FC<ChessBoardProps> = ({
       {/* Column labels */}
       <View style={styles.colLabels}>
         {cols.map(col => (
-          <View key={`col-${col}`} style={[styles.label, { width: SQUARE_SIZE }]}>
-            <View style={styles.labelText}>
-              {/* Column letter a-h rendered via StyleSheet */}
-            </View>
+          <View key={`col-${col}`} style={[styles.label, { width: squareSize }]}>
+            <Text style={styles.labelText}>{COLUMNS[col]}</Text>
           </View>
         ))}
       </View>
     </View>
   );
 };
-
-export { SQUARE_SIZE, BOARD_WIDTH };
 
 const styles = StyleSheet.create({
   boardContainer: {
@@ -150,6 +163,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   labelText: {
-    // Placeholder for label rendering
+    color: COLORS.textSecondary,
+    fontSize: 10,
+    fontWeight: '600',
   },
 });

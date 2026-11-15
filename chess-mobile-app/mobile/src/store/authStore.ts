@@ -7,12 +7,16 @@ const REFRESH_KEY = 'arcane_chess_refresh_token';
 
 interface AuthState {
   isAuthenticated: boolean;
+  isGuest: boolean;
+  isHydrated: boolean;
   isLoading: boolean;
   userId: string | null;
   email: string | null;
   username: string | null;
   error: string | null;
   hydrate: () => Promise<void>;
+  enterGuestMode: () => void;
+  exitGuestMode: () => void;
   login: (email: string, password: string) => Promise<void>;
   register: (email: string, password: string, username: string) => Promise<boolean>;
   logout: () => Promise<void>;
@@ -25,6 +29,7 @@ async function saveSession(session: AuthSessionResponse) {
   apiService.setToken(session.accessToken);
   return {
     isAuthenticated: true,
+    isGuest: false,
     userId: session.user.id,
     email: session.user.email,
     username: session.user.username,
@@ -34,6 +39,8 @@ async function saveSession(session: AuthSessionResponse) {
 
 export const useAuthStore = create<AuthState>()((set) => ({
   isAuthenticated: false,
+  isGuest: false,
+  isHydrated: false,
   isLoading: false,
   userId: null,
   email: null,
@@ -51,8 +58,14 @@ export const useAuthStore = create<AuthState>()((set) => ({
       apiService.clearToken();
       // Keep the refresh token when the backend is merely offline.
       set({ isAuthenticated: false, userId: null, email: null, username: null });
+    } finally {
+      set({ isHydrated: true });
     }
   },
+
+  enterGuestMode: () => set({ isGuest: true }),
+
+  exitGuestMode: () => set({ isGuest: false }),
 
   login: async (email, password) => {
     set({ isLoading: true, error: null });
@@ -90,7 +103,14 @@ export const useAuthStore = create<AuthState>()((set) => ({
     await resetIapUser().catch(() => undefined);
     await SecureStore.deleteItemAsync(REFRESH_KEY);
     apiService.clearToken();
-    set({ isAuthenticated: false, userId: null, email: null, username: null, error: null });
+    set({
+      isAuthenticated: false,
+      isGuest: false,
+      userId: null,
+      email: null,
+      username: null,
+      error: null,
+    });
   },
 
   clearError: () => set({ error: null }),

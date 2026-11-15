@@ -1,16 +1,25 @@
-import React, { useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
+  ActivityIndicator,
   View,
   Text,
   StyleSheet,
   ScrollView,
   TouchableOpacity,
   TextInput,
-  Switch,
   StatusBar,
 } from 'react-native';
 import { COLORS, LIGHT_COLORS } from '../../constants/arcane-colors';
 import { SPACING, FONT_SIZE, FONT_WEIGHT, BORDER_RADIUS, SHADOW } from '../../constants/arcane-theme';
+import { apiService, GameModeDefinition, RankScreenData } from '../../services/api/apiService';
+import { useAuthStore } from '../../store/authStore';
+import { useArcaneThemeStore } from '../../store/arcaneThemeStore';
+
+type MatchmakingNavigationOptions = {
+  queueType: 'RANKED' | 'CASUAL';
+  timeControlId: string;
+  gameModeCode: string;
+};
 
 // ============================================================
 // THEME (Dark / Light)
@@ -21,7 +30,8 @@ const ThemeContext = React.createContext<{
   toggle: () => void;
   colors: Palette;
   styles: ReturnType<typeof makeStyles>;
-  onNavigate?: (id: string) => void;
+  rank: RankScreenData | null;
+  onNavigate?: (id: string, params?: MatchmakingNavigationOptions) => void;
 } | null>(null);
 const useTheme = () => React.useContext(ThemeContext)!;
 
@@ -35,12 +45,14 @@ const TIME_CONTROLS = [
   { id: 'classic', label: 'Cổ Điển', time: '30m | 0s' },
 ];
 
-const VARIANTS = [
-  { id: 'fog', title: 'Cờ Sương Mù', tag: 'HOT 🔥', tagColor: COLORS.accentRed, tint: '#1B2A4A', desc: 'Tầm nhìn giới hạn bởi quân cờ, chiến thuật mai phục bất ngờ.', players: '3,410 chơi' },
-  { id: 'boss', title: 'Săn Boss Ma Thuật', tag: 'SỰ KIỆN 🎁', tagColor: COLORS.primary, tint: '#3A2410', desc: 'Đấu trùm Hắc Ám theo lượt, phối hợp giải mã trận diện...', players: '2,185 chơi' },
-  { id: 'four', title: 'Đại Chiến 4 Người', tag: 'MỚI 🔥', tagColor: COLORS.accentGreen, tint: '#123A3A', desc: 'Bàn cờ chữ thập 14x14 nhỏ rộng, 4 vương quốc hỗn...', players: '5,904 chơi' },
-  { id: 'chop', title: 'Đấu Chớp Nhoáng', tag: 'X2 THƯỞNG 🔥', tagColor: COLORS.secondary, tint: '#3A1A4A', desc: '30 giây mỗi bàn, nước đi siêu tốc, adrenaline tột đỉnh.', players: '8,120 chơi' },
-];
+const MODE_PRESENTATION: Record<string, { tag: string; tagColor: string; tint: string }> = {
+  FOG_OF_WAR: { tag: 'CHIẾN THUẬT', tagColor: COLORS.accentRed, tint: '#1B2A4A' },
+  BOSS_HUNT: { tag: 'PVE', tagColor: COLORS.primary, tint: '#3A2410' },
+  MAGIC_WAR: { tag: 'PVP & PVE', tagColor: COLORS.secondary, tint: '#3A1A4A' },
+  FOUR_SEASONS: { tag: 'PVP', tagColor: COLORS.accentGreen, tint: '#123A3A' },
+};
+
+const SERVER_READY_MODE_CODES = new Set(['STANDARD']);
 
 const BOTS = [
   { id: 1, name: 'Tập Sự', sub: 'Bot 600 ELO' },
@@ -49,19 +61,15 @@ const BOTS = [
   { id: 4, name: 'Stockfish Pro', sub: 'Bot 2500+ ELO' },
 ];
 
-const TABS = [
-  { id: 'home', label: 'Trang chủ', icon: '🛡️' },
-  { id: 'modes', label: 'Chế độ', icon: '⚔️' },
-  { id: 'puzzle', label: 'Giải đố', icon: '🧩' },
-  { id: 'ranking', label: 'Xếp hạng', icon: '🏅' },
-  { id: 'shop', label: 'Cửa hàng', icon: '🛒' },
-];
-
 // ============================================================
 // HEADER
 // ============================================================
 const Header = () => {
   const { styles, isDark, toggle } = useTheme();
+  const username = useAuthStore(state => state.username);
+  const isAuthenticated = useAuthStore(state => state.isAuthenticated);
+  const displayName = isAuthenticated ? username || 'Tài khoản' : 'Khách';
+  const initials = displayName.slice(0, 2).toUpperCase();
   return (
   <View style={styles.header}>
     <View style={styles.row}>
@@ -69,15 +77,11 @@ const Header = () => {
       <Text style={styles.logoText}>ARCANE CHESS</Text>
     </View>
     <View style={styles.row}>
-      <View style={styles.pill}><Text style={styles.pillText}>⚡ 48/50</Text></View>
+      <View style={styles.pill}><Text style={styles.pillText} numberOfLines={1}>{displayName}</Text></View>
       <TouchableOpacity style={styles.iconBtn} onPress={toggle}>
         <Text>{isDark ? '☀️' : '🌙'}</Text>
       </TouchableOpacity>
-      <View style={styles.iconBtn}>
-        <Text>🔔</Text>
-        <View style={styles.notifDot} />
-      </View>
-      <View style={styles.headerAvatar}><Text style={styles.headerAvatarText}>GM</Text></View>
+      <View style={styles.headerAvatar}><Text style={styles.headerAvatarText}>{initials}</Text></View>
     </View>
   </View>
   );
@@ -87,7 +91,7 @@ const Header = () => {
 // TITLE BAR
 // ============================================================
 const TitleBar = () => {
-  const { styles } = useTheme();
+  const { styles, rank } = useTheme();
   return (
   <View style={styles.titleBar}>
     <View style={styles.row}>
@@ -98,7 +102,9 @@ const TitleBar = () => {
       </View>
     </View>
     <View style={styles.eloPill}>
-      <Text style={styles.eloPillText}>🏆 1,450 ELO</Text>
+      <Text style={styles.eloPillText}>
+        {rank ? `🏆 ${rank.rank.rankPoints.toLocaleString()} ĐIỂM` : '🏆 RANK CHUNG'}
+      </Text>
     </View>
   </View>
   );
@@ -107,55 +113,89 @@ const TitleBar = () => {
 // ============================================================
 // RANKED CARD
 // ============================================================
-const RankedCard = () => {
-  const { styles, colors, onNavigate } = useTheme();
-  const [selected, setSelected] = useState('blitz');
+const RankedCard = ({
+  rankLoading,
+  rankError,
+  onRetryRank,
+  selectedTimeControl,
+  onSelectTimeControl,
+  selectedModeCode,
+  selectedModeName,
+  modePlayable,
+}: {
+  rankLoading: boolean;
+  rankError: string | null;
+  onRetryRank: () => void;
+  selectedTimeControl: string;
+  onSelectTimeControl: (id: string) => void;
+  selectedModeCode: string;
+  selectedModeName: string;
+  modePlayable: boolean;
+}) => {
+  const { styles, onNavigate, rank } = useTheme();
+  const isAuthenticated = useAuthStore(state => state.isAuthenticated);
+  const wins = rank?.rank.wins ?? 0;
+  const losses = rank?.rank.losses ?? 0;
+  const draws = rank?.rank.draws ?? 0;
+  const total = wins + losses + draws;
+  const winRate = total > 0 ? `${((wins / total) * 100).toFixed(1)}%` : '—';
 
   return (
     <View style={styles.rankedCard}>
       <View style={styles.rankedTop}>
         <View style={styles.row}>
           <View style={styles.rankAvatar}>
-            <Text style={{ fontSize: 22 }}>🛡️</Text>
-            <View style={styles.rankAvatarTag}><Text style={styles.rankAvatarTagText}>BẠC THẦY</Text></View>
+            <Text style={{ fontSize: 22 }}>♚</Text>
+            {rank && (
+              <View style={styles.rankAvatarTag}>
+                <Text style={styles.rankAvatarTagText}>{rank.rank.tier.code}</Text>
+              </View>
+            )}
           </View>
           <View style={{ marginLeft: SPACING.md }}>
-            <Text style={styles.rankName}>Hạng Tinh Anh <Text style={{ color: COLORS.accent }}>✓</Text></Text>
-            <Text style={styles.rankSub}>Bậc Kim Cương II • Cụm Máy Chủ Châu Á</Text>
+            <Text style={styles.rankName}>
+              {rankLoading ? 'Đang tải rank...' : rank?.rank.tier.name ?? (isAuthenticated ? 'Chưa có rank' : 'Chế độ khách')}
+            </Text>
+            <Text style={styles.rankSub}>
+              {rank ? `${rank.season.name} • Rank chung mọi chế độ` : 'Đăng nhập để xem rank và chơi PvP'}
+            </Text>
           </View>
         </View>
-        <View style={styles.streakBox}>
-          <Text style={styles.streakLabel}>CHUỖI THẮNG</Text>
-          <Text style={styles.streakValue}>5 Trận 🔥</Text>
-        </View>
+        <Text style={styles.streakValue}>{rank ? `${rank.rank.rankPoints} điểm` : '—'}</Text>
       </View>
 
       <View style={styles.statsRow}>
         <View style={styles.statItem}>
           <Text style={styles.statLabel}>TỈ LỆ THẮNG</Text>
-          <Text style={styles.statValue}>68.4%</Text>
+          <Text style={styles.statValue}>{winRate}</Text>
         </View>
         <View style={styles.statDivider} />
         <View style={styles.statItem}>
-          <Text style={styles.statLabel}>MÙA GIẢI 9</Text>
-          <Text style={styles.statValue}>Top 4.2%</Text>
+          <Text style={styles.statLabel}>THẮNG / THUA</Text>
+          <Text style={styles.statValue}>{rank ? `${wins} / ${losses}` : '—'}</Text>
         </View>
         <View style={styles.statDivider} />
         <View style={styles.statItem}>
-          <Text style={styles.statLabel}>ĐIỂM HẠNG</Text>
-          <Text style={[styles.statValue, { color: COLORS.accentGreen }]}>+28 LP</Text>
+          <Text style={styles.statLabel}>HÒA</Text>
+          <Text style={[styles.statValue, { color: COLORS.accentGreen }]}>{rank ? draws : '—'}</Text>
         </View>
       </View>
+
+      {rankError && (
+        <TouchableOpacity onPress={onRetryRank} style={styles.inlineError}>
+          <Text style={styles.inlineErrorText}>{rankError} · Nhấn để thử lại</Text>
+        </TouchableOpacity>
+      )}
 
       <Text style={styles.chooseLabel}>CHỌN THỂ THỨC ĐỒNG HỒ</Text>
       <View style={styles.timeRow}>
         {TIME_CONTROLS.map(t => {
-          const active = selected === t.id;
+          const active = selectedTimeControl === t.id;
           return (
             <TouchableOpacity
               key={t.id}
               style={[styles.timeBtn, active && styles.timeBtnActive]}
-              onPress={() => setSelected(t.id)}
+              onPress={() => onSelectTimeControl(t.id)}
             >
               <Text style={[styles.timeLabel, active && { color: COLORS.primary }]}>{t.label}</Text>
               <Text style={[styles.timeValue, active && { color: COLORS.textPrimary }]}>{t.time}</Text>
@@ -167,13 +207,54 @@ const RankedCard = () => {
       <View style={styles.liveRow}>
         <View style={styles.row}>
           <View style={styles.liveDot} />
-          <Text style={styles.liveText}>Đang trực tuyến: 14,892 kỳ thủ</Text>
+          <Text style={styles.liveText}>Ghép trận cùng bậc rank</Text>
         </View>
-        <Text style={styles.liveText}>Dự kiến: ~15s</Text>
+        <Text style={styles.liveText}>{selectedModeName}</Text>
       </View>
 
-      <TouchableOpacity style={styles.findBtn} activeOpacity={0.85} onPress={() => onNavigate?.('matchmaking')}>
-        <Text style={styles.findText}>⚔️  TÌM TRẬN NGAY  ›</Text>
+      <TouchableOpacity
+        style={[styles.findBtn, (rankLoading || !modePlayable) && styles.disabledButton]}
+        activeOpacity={0.85}
+        disabled={rankLoading || !modePlayable}
+        onPress={() => {
+          if (!isAuthenticated) {
+            onNavigate?.('login');
+          } else if (rank) {
+            onNavigate?.('matchmaking', {
+              queueType: 'RANKED',
+              timeControlId: selectedTimeControl,
+              gameModeCode: selectedModeCode,
+            });
+          } else {
+            onRetryRank();
+          }
+        }}
+      >
+        <Text style={styles.findText}>
+          {rankLoading
+            ? 'ĐANG TẢI RANK...'
+            : !modePlayable
+              ? 'LUẬT CHẾ ĐỘ ĐANG HOÀN THIỆN'
+            : rank
+              ? '⚔️  TÌM TRẬN XẾP HẠNG  ›'
+              : isAuthenticated
+                ? 'THỬ TẢI LẠI RANK'
+                : 'ĐĂNG NHẬP ĐỂ XẾP HẠNG'}
+        </Text>
+      </TouchableOpacity>
+      <TouchableOpacity
+        style={[styles.casualButton, !modePlayable && styles.disabledButton]}
+        activeOpacity={0.75}
+        disabled={!modePlayable}
+        onPress={() => onNavigate?.('matchmaking', {
+          queueType: 'CASUAL',
+          timeControlId: selectedTimeControl,
+          gameModeCode: selectedModeCode,
+        })}
+      >
+        <Text style={styles.casualButtonText}>
+          {modePlayable ? 'Chơi thường · không tính điểm rank' : 'Chế độ chưa thể vào trận'}
+        </Text>
       </TouchableOpacity>
     </View>
   );
@@ -182,34 +263,93 @@ const RankedCard = () => {
 // ============================================================
 // VARIANTS
 // ============================================================
-const VariantsSection = () => {
-  const { styles } = useTheme();
+const VariantsSection = ({
+  modes,
+  loading,
+  error,
+  selectedModeCode,
+  onSelect,
+  onRetry,
+}: {
+  modes: GameModeDefinition[];
+  loading: boolean;
+  error: string | null;
+  selectedModeCode: string;
+  onSelect: (code: string) => void;
+  onRetry: () => void;
+}) => {
+  const { styles, colors } = useTheme();
   return (
   <View style={styles.section}>
     <View style={styles.sectionHeader}>
       <Text style={styles.sectionTitle}>✦ Biến Thể Ma Thuật</Text>
-      <Text style={styles.sectionAction}>4 ĐANG MỞ</Text>
+      <Text style={styles.sectionAction}>{loading ? 'ĐANG TẢI' : `${modes.length} CHẾ ĐỘ`}</Text>
     </View>
-    <View style={styles.grid}>
-      {VARIANTS.map(v => (
-        <View key={v.id} style={styles.variantCard}>
-          <View style={[styles.variantArt, { backgroundColor: v.tint }]}>
-            <Text style={styles.variantEmoji}>♞</Text>
-            <View style={[styles.variantTag, { backgroundColor: v.tagColor }]}>
-              <Text style={styles.variantTagText}>{v.tag}</Text>
+    {loading && modes.length === 0 ? (
+      <ActivityIndicator color={colors.primary} />
+    ) : error && modes.length === 0 ? (
+      <TouchableOpacity onPress={onRetry} style={styles.inlineError}>
+        <Text style={styles.inlineErrorText}>{error} · Nhấn để thử lại</Text>
+      </TouchableOpacity>
+    ) : modes.length === 0 ? (
+      <View style={styles.emptyState}>
+        <Text style={styles.variantDesc}>Chưa có chế độ nào được mở trong mùa hiện tại.</Text>
+      </View>
+    ) : (
+      <View style={styles.grid}>
+        {modes.map(mode => {
+          const presentation = MODE_PRESENTATION[mode.code] ?? {
+            tag: 'CHẾ ĐỘ',
+            tagColor: COLORS.primary,
+            tint: '#243044',
+          };
+          const preview = mode.demoPreview;
+          const selected = selectedModeCode === mode.code;
+          const modePlayable = SERVER_READY_MODE_CODES.has(mode.code);
+          return (
+            <View key={mode.id} style={[styles.variantCard, selected && styles.variantCardSelected]}>
+              <View style={[styles.variantArt, { backgroundColor: presentation.tint }]}>
+                <Text style={styles.variantEmoji}>♞</Text>
+                <View style={[styles.variantTag, { backgroundColor: presentation.tagColor }]}>
+                  <Text style={styles.variantTagText}>{presentation.tag}</Text>
+                </View>
+              </View>
+              <View style={styles.variantBody}>
+                <Text style={styles.variantTitle}>{mode.name}</Text>
+                <Text style={styles.variantDesc} numberOfLines={3}>
+                  {mode.description || 'Chế độ chơi do máy chủ quản lý.'}
+                </Text>
+                <View style={styles.variantFooter}>
+                  <Text style={styles.variantPlayers} numberOfLines={1}>
+                    {preview ? `Minh họa: ${preview.displayName} · ${preview.tierName}` : 'Không có rank minh họa'}
+                  </Text>
+                  <TouchableOpacity
+                    accessibilityRole="button"
+                    accessibilityState={{ selected }}
+                    onPress={() => onSelect(mode.code)}
+                  >
+                    <Text style={styles.variantJoin}>{selected ? 'ĐÃ CHỌN' : 'CHỌN →'}</Text>
+                  </TouchableOpacity>
+                </View>
+                {preview && (
+                  <Text style={styles.demoLabel}>
+                    Demo · {preview.rankPoints.toLocaleString()} điểm · {preview.wins}T/{preview.losses}B/{preview.draws}H
+                  </Text>
+                )}
+                {!modePlayable && (
+                  <Text style={styles.demoLabel}>Luật phía máy chủ đang được triển khai</Text>
+                )}
+              </View>
             </View>
-          </View>
-          <View style={styles.variantBody}>
-            <Text style={styles.variantTitle}>{v.title}</Text>
-            <Text style={styles.variantDesc} numberOfLines={3}>{v.desc}</Text>
-            <View style={styles.variantFooter}>
-              <Text style={styles.variantPlayers}>{v.players}</Text>
-              <TouchableOpacity><Text style={styles.variantJoin}>VÀO →</Text></TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      ))}
-    </View>
+          );
+        })}
+      </View>
+    )}
+    {error && modes.length > 0 && (
+      <TouchableOpacity onPress={onRetry} style={styles.inlineError}>
+        <Text style={styles.inlineErrorText}>Không thể làm mới danh sách. Nhấn để thử lại.</Text>
+      </TouchableOpacity>
+    )}
   </View>
   );
 };
@@ -220,7 +360,6 @@ const VariantsSection = () => {
 const PracticeSection = () => {
   const { styles, colors, onNavigate } = useTheme();
   const [bot, setBot] = useState(3);
-  const [spectator, setSpectator] = useState(true);
 
   return (
     <View style={styles.section}>
@@ -274,31 +413,32 @@ const PracticeSection = () => {
         </View>
 
         <View style={styles.lobbyRow}>
-          <TouchableOpacity style={styles.createBtn}>
-            <Text style={styles.createBtnText}>⊕ Tạo Phòng Mới</Text>
+          <TouchableOpacity
+            style={[styles.createBtn, styles.disabledButton]}
+            disabled
+            accessibilityState={{ disabled: true }}
+          >
+            <Text style={styles.createBtnText}>Phòng tùy chỉnh sắp ra mắt</Text>
           </TouchableOpacity>
           <View style={styles.pinBox}>
             <TextInput
               style={styles.pinInput}
-              placeholder="Mã PIN 6 số..."
+              placeholder="Mã PIN (sắp ra mắt)"
               placeholderTextColor={colors.textMuted}
               keyboardType="number-pad"
               maxLength={6}
+              editable={false}
             />
-            <TouchableOpacity style={styles.pinBtn}>
+            <TouchableOpacity style={[styles.pinBtn, styles.disabledButton]} disabled>
               <Text style={styles.pinBtnText}>Vào</Text>
             </TouchableOpacity>
           </View>
         </View>
 
         <View style={styles.spectatorRow}>
-          <Text style={styles.spectatorText}>👁  Khán giả quan sát (Spectator)</Text>
-          <Switch
-            value={spectator}
-            onValueChange={setSpectator}
-            trackColor={{ false: colors.border, true: colors.primary }}
-            thumbColor="#FFFFFF"
-          />
+          <Text style={styles.spectatorText}>
+            Chế độ khán giả sẽ khả dụng khi phòng tùy chỉnh được triển khai.
+          </Text>
         </View>
       </View>
     </View>
@@ -306,37 +446,87 @@ const PracticeSection = () => {
 };
 
 // ============================================================
-// TAB BAR
-// ============================================================
-const TabBar = () => {
-  const { styles, colors, onNavigate } = useTheme();
-  return (
-  <View style={styles.tabBar}>
-    {TABS.map(t => {
-      const active = t.id === 'modes';
-      return (
-        <TouchableOpacity key={t.id} style={styles.tabItem} onPress={() => onNavigate?.(t.id)}>
-          <Text style={[styles.tabIcon, { opacity: active ? 1 : 0.5 }]}>{t.icon}</Text>
-          <Text style={[styles.tabLabel, { color: active ? colors.tabBarActive : colors.tabBarInactive }]}>{t.label}</Text>
-          {active && <View style={styles.tabIndicator} />}
-        </TouchableOpacity>
-      );
-    })}
-  </View>
-  );
-};
-
-// ============================================================
 // SCREEN
 // ============================================================
-const ModesScreen = ({ onNavigate }: { onNavigate?: (id: string) => void }) => {
-  const [isDark, setIsDark] = useState(false);
+const ModesScreen = ({
+  onNavigate,
+}: {
+  onNavigate?: (id: string, params?: MatchmakingNavigationOptions) => void;
+}) => {
+  const isDark = useArcaneThemeStore(state => state.isDark);
+  const toggleTheme = useArcaneThemeStore(state => state.toggleTheme);
+  const isAuthenticated = useAuthStore(state => state.isAuthenticated);
+  const [rank, setRank] = useState<RankScreenData | null>(null);
+  const [rankLoading, setRankLoading] = useState(false);
+  const [rankError, setRankError] = useState<string | null>(null);
+  const [modes, setModes] = useState<GameModeDefinition[]>([]);
+  const [modesLoading, setModesLoading] = useState(false);
+  const [modesError, setModesError] = useState<string | null>(null);
+  const [selectedTimeControl, setSelectedTimeControl] = useState('blitz');
+  const [selectedModeCode, setSelectedModeCode] = useState('STANDARD');
+  const mountedRef = useRef(false);
+  const modesRequestRef = useRef(0);
+  const rankRequestRef = useRef(0);
   const colors: Palette = isDark ? COLORS : LIGHT_COLORS;
   const styles = React.useMemo(() => makeStyles(colors), [isDark]);
+  const loadModes = useCallback(async () => {
+    const requestId = ++modesRequestRef.current;
+    setModesLoading(true);
+    setModesError(null);
+    const response = await apiService.getActiveModes();
+    if (!mountedRef.current || requestId !== modesRequestRef.current) return;
+    if (response.error || !response.data) {
+      setModesError(response.error || 'Không tải được chế độ chơi');
+    } else {
+      const availableModes = response.data.modes;
+      setModes(availableModes);
+      setSelectedModeCode(current =>
+        current === 'STANDARD' || availableModes.some(mode => mode.code === current)
+          ? current
+          : 'STANDARD',
+      );
+    }
+    setModesLoading(false);
+  }, []);
+  const loadRank = useCallback(async () => {
+    const requestId = ++rankRequestRef.current;
+    if (!isAuthenticated) {
+      setRank(null);
+      setRankError(null);
+      setRankLoading(false);
+      return;
+    }
+    setRankLoading(true);
+    setRankError(null);
+    const response = await apiService.getMyRank();
+    if (!mountedRef.current || requestId !== rankRequestRef.current) return;
+    if (response.error || !response.data) {
+      setRank(null);
+      setRankError(response.error || 'Không tải được rank');
+    } else {
+      setRank(response.data);
+    }
+    setRankLoading(false);
+  }, [isAuthenticated]);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    void loadModes();
+    return () => {
+      mountedRef.current = false;
+    };
+  }, [loadModes]);
+
+  useEffect(() => {
+    void loadRank();
+  }, [loadRank]);
+
   const ctx = React.useMemo(
-    () => ({ isDark, toggle: () => setIsDark(v => !v), colors, styles, onNavigate }),
-    [isDark, styles, onNavigate],
+    () => ({ isDark, toggle: toggleTheme, colors, styles, onNavigate, rank }),
+    [isDark, toggleTheme, colors, styles, onNavigate, rank],
   );
+  const selectedModeName = modes.find(mode => mode.code === selectedModeCode)?.name ?? 'Cờ tiêu chuẩn';
+  const modePlayable = SERVER_READY_MODE_CODES.has(selectedModeCode);
 
   return (
     <ThemeContext.Provider value={ctx}>
@@ -345,12 +535,27 @@ const ModesScreen = ({ onNavigate }: { onNavigate?: (id: string) => void }) => {
         <Header />
         <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
           <TitleBar />
-          <RankedCard />
-          <VariantsSection />
+          <RankedCard
+            rankLoading={rankLoading}
+            rankError={rankError}
+            onRetryRank={() => void loadRank()}
+            selectedTimeControl={selectedTimeControl}
+            onSelectTimeControl={setSelectedTimeControl}
+            selectedModeCode={selectedModeCode}
+            selectedModeName={selectedModeName}
+            modePlayable={modePlayable}
+          />
+          <VariantsSection
+            modes={modes}
+            loading={modesLoading}
+            error={modesError}
+            selectedModeCode={selectedModeCode}
+            onSelect={setSelectedModeCode}
+            onRetry={() => void loadModes()}
+          />
           <PracticeSection />
           <View style={{ height: 100 }} />
         </ScrollView>
-        <TabBar />
       </View>
     </ThemeContext.Provider>
   );
@@ -383,7 +588,6 @@ const makeStyles = (COLORS: Palette) => StyleSheet.create({
     width: 34, height: 34, borderRadius: 17, backgroundColor: COLORS.backgroundCard,
     justifyContent: 'center', alignItems: 'center', marginRight: SPACING.sm,
   },
-  notifDot: { position: 'absolute', top: 6, right: 7, width: 8, height: 8, borderRadius: 4, backgroundColor: COLORS.accentRed },
   headerAvatar: {
     width: 34, height: 34, borderRadius: 17, backgroundColor: COLORS.secondary,
     borderWidth: 2, borderColor: COLORS.primary, justifyContent: 'center', alignItems: 'center',
@@ -451,10 +655,22 @@ const makeStyles = (COLORS: Palette) => StyleSheet.create({
     backgroundColor: COLORS.primary, borderRadius: BORDER_RADIUS.lg, paddingVertical: SPACING.lg,
     alignItems: 'center', ...SHADOW.gold,
   },
+  disabledButton: { opacity: 0.55 },
   findText: { fontSize: FONT_SIZE.lg, fontWeight: FONT_WEIGHT.extrabold, color: '#1A1205', letterSpacing: 1 },
+  casualButton: { alignItems: 'center', paddingVertical: SPACING.md },
+  casualButtonText: { color: COLORS.textSecondary, fontSize: FONT_SIZE.sm, fontWeight: FONT_WEIGHT.semibold },
+  inlineError: {
+    backgroundColor: COLORS.accentRed + '14', borderRadius: BORDER_RADIUS.md,
+    padding: SPACING.md, marginBottom: SPACING.md,
+  },
+  inlineErrorText: { color: COLORS.accentRed, fontSize: FONT_SIZE.sm },
 
   // sections
   section: { marginBottom: SPACING.xl },
+  emptyState: {
+    backgroundColor: COLORS.backgroundCard, borderRadius: BORDER_RADIUS.lg,
+    padding: SPACING.lg, borderWidth: 1, borderColor: COLORS.border,
+  },
   sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: SPACING.md },
   sectionTitle: { fontSize: FONT_SIZE.lg, fontWeight: FONT_WEIGHT.bold, color: COLORS.textPrimary },
   sectionAction: { fontSize: 10, fontWeight: FONT_WEIGHT.bold, color: COLORS.primary, letterSpacing: 0.5 },
@@ -465,6 +681,7 @@ const makeStyles = (COLORS: Palette) => StyleSheet.create({
     width: '48%', backgroundColor: COLORS.backgroundCard, borderRadius: BORDER_RADIUS.lg,
     borderWidth: 1, borderColor: COLORS.border, overflow: 'hidden',
   },
+  variantCardSelected: { borderColor: COLORS.primary },
   variantArt: { height: 84, justifyContent: 'center', alignItems: 'center' },
   variantEmoji: { fontSize: 40, color: 'rgba(255,255,255,0.35)' },
   variantTag: {
@@ -478,6 +695,7 @@ const makeStyles = (COLORS: Palette) => StyleSheet.create({
   variantFooter: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: SPACING.sm },
   variantPlayers: { fontSize: 10, color: COLORS.textMuted },
   variantJoin: { fontSize: 10, fontWeight: FONT_WEIGHT.extrabold, color: COLORS.primary },
+  demoLabel: { fontSize: 9, color: COLORS.textMuted, marginTop: SPACING.xs },
 
   // panels
   panel: {
@@ -532,16 +750,6 @@ const makeStyles = (COLORS: Palette) => StyleSheet.create({
   },
   spectatorText: { fontSize: FONT_SIZE.sm, color: COLORS.textSecondary },
 
-  // tab bar
-  tabBar: {
-    flexDirection: 'row', backgroundColor: COLORS.tabBarBg, borderTopWidth: 1, borderTopColor: COLORS.border,
-    paddingBottom: SPACING.lg, paddingTop: SPACING.sm, paddingHorizontal: SPACING.sm,
-    position: 'absolute', bottom: 0, left: 0, right: 0,
-  },
-  tabItem: { flex: 1, alignItems: 'center', paddingVertical: SPACING.xs },
-  tabIcon: { fontSize: 20, marginBottom: 2 },
-  tabLabel: { fontSize: 9, fontWeight: FONT_WEIGHT.medium },
-  tabIndicator: { position: 'absolute', top: -SPACING.sm - 1, width: 24, height: 3, backgroundColor: COLORS.primary, borderRadius: 1.5 },
 });
 
 export default ModesScreen;
