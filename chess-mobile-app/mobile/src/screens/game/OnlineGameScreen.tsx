@@ -5,11 +5,14 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Chess } from 'chess.js';
 import { Socket } from 'socket.io-client';
 import { ChessBoard } from '../../components/chess/ChessBoard';
+import { CardHand } from '../../components/cards/CardHand';
+import { SKILL_CARD_BY_ID } from '../../constants/skillCards';
 import { COLORS, SPACING } from '../../constants/theme';
 import { RootStackParamList } from '../../navigation/types';
 import { getServerSocket } from '../../services/websocket/serverSocket';
 import { usePlayerStore } from '../../store/playerStore';
 import { BoardPosition, BoardState, ChessPiece, PieceType } from '../../types/chess';
+import { CardInHand } from '../../types/card';
 import { fromAlgebraic, toAlgebraic } from '../../utils/chessUtils';
 
 type OnlineRoute = RouteProp<RootStackParamList, 'GamePvP'>;
@@ -28,7 +31,11 @@ interface ServerGameState {
   gameModeCode?: string | null;
   modeConfig?: { timeControlId?: string | null };
   drawOfferBy?: string | null;
-  moves?: Array<{ from: string; to: string }>;
+  moves?: Array<{ from: string; to: string; playerId?: string; captured?: string }>;
+  skillCardCounts?: { w: number; b: number };
+  skillCardUsedThisTurn?: { w: boolean; b: boolean };
+  lastSkillCardBy?: 'w' | 'b' | null;
+  skillEffects?: Array<{ type: string; square?: string; movesRemaining: number }>;
 }
 
 interface ServerMatchReward {
@@ -62,6 +69,34 @@ function formatClock(milliseconds: number): string {
   const minutes = Math.floor(totalSeconds / 60).toString().padStart(2, '0');
   const seconds = (totalSeconds % 60).toString().padStart(2, '0');
   return `${minutes}:${seconds}`;
+}
+
+function cardTargetPositions(
+  effect: string,
+  board: BoardState,
+  color: 'w' | 'b',
+  from: BoardPosition | null,
+  moveCount: number,
+): BoardPosition[] {
+  const ownColor = color === 'w' ? 'white' : 'black';
+  const positions: BoardPosition[] = [];
+  for (let row = 0; row < 8; row += 1) {
+    for (let col = 0; col < 8; col += 1) {
+      const piece = board[row][col];
+      let valid = false;
+      if (effect === 'portal') valid = !!piece && piece.color === ownColor && piece.type !== 'king' && (!from || (row !== from.row || col !== from.col));
+      else if (effect === 'start') {
+        valid = moveCount === 0 && !!piece && piece.color === ownColor
+          && (from ? row === 7 && col === from.col : piece.type === 'pawn' && row === 6);
+      } else if (effect === 'tele') valid = !!piece && piece.color === ownColor;
+      else if (effect === 'trump') valid = true;
+      else if (effect === 'fortune' || effect === 'bring_back') valid = !piece;
+      else if (effect === 'freeze' || effect === 'high_risk' || effect === 'mosquito') valid = !!piece && piece.color !== ownColor;
+      else valid = !!piece && piece.color === ownColor;
+      if (valid) positions.push({ row, col });
+    }
+  }
+  return positions;
 }
 
 interface PlayerPanelProps {
@@ -105,6 +140,10 @@ export const OnlineGameScreen: React.FC = () => {
   const [game, setGame] = useState<ServerGameState | null>(null);
   const [reward, setReward] = useState<ServerMatchReward | null>(null);
   const [selected, setSelected] = useState<BoardPosition | null>(null);
+  const [cards, setCards] = useState<CardInHand[]>([]);
+  const [selectedCard, setSelectedCard] = useState<CardInHand | null>(null);
+  const [targetingCard, setTargetingCard] = useState<CardInHand | null>(null);
+  const [targetingFrom, setTargetingFrom] = useState<BoardPosition | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [drawOfferPending, setDrawOfferPending] = useState(false);
@@ -140,6 +179,7 @@ export const OnlineGameScreen: React.FC = () => {
     let connected: Socket | null = null;
     setGame(null);
     setReward(null);
+    setCards([]);
 
     const join = () => connected?.emit('game:join', { gameId });
     const update = (next: ServerGameState) => {
@@ -163,9 +203,30 @@ export const OnlineGameScreen: React.FC = () => {
       setError(Array.isArray(message) ? message.join(' · ') : message || 'Không thể thực hiện thao tác.');
       setDrawOfferPending(false);
       promptedDrawOfferBy.current = null;
+      setTargetingCard(null);
+      setTargetingFrom(null);
     };
     const onReward = (result: ServerMatchReward) => {
       if (active) setReward(result);
+    };
+    const onCards = (response: { hand: string[]; drawCount: number }) => {
+      if (!active) return;
+      const next: CardInHand[] = [];
+      for (const [index, id] of response.hand.entries()) {
+        const card = SKILL_CARD_BY_ID[id];
+        if (!card) {
+          setError(`Máy chủ gửi lá bài không xác định: ${id}`);
+          return;
+        }
+        next.push({
+          card,
+          instanceId: `${id}_${index}`,
+          isUsable: true,
+          cooldownRemaining: 0,
+          usesRemaining: 1,
+        });
+      }
+      setCards(next);
     };
     const onDrawOffer = (offer: { gameId: string; offeredBy: string }) => {
       if (active && offer.gameId === gameId && connected) {
@@ -198,6 +259,7 @@ export const OnlineGameScreen: React.FC = () => {
       current.on('game:updated', update);
       current.on('game:finished', update);
       current.on('game:reward', onReward);
+      current.on('game:cards', onCards);
       current.on('game:draw_offer', onDrawOffer);
       current.on('game:draw_offer_result', onDrawOfferResult);
       current.on('exception', onError);
@@ -213,6 +275,7 @@ export const OnlineGameScreen: React.FC = () => {
       connected?.off('game:updated', update);
       connected?.off('game:finished', update);
       connected?.off('game:reward', onReward);
+      connected?.off('game:cards', onCards);
       connected?.off('game:draw_offer', onDrawOffer);
       connected?.off('game:draw_offer_result', onDrawOfferResult);
       connected?.off('exception', onError);
@@ -230,11 +293,25 @@ export const OnlineGameScreen: React.FC = () => {
   const engine = useMemo(() => game ? new Chess(game.fen) : null, [game?.fen]);
   const board = useMemo(() => game ? boardFromFen(game.fen) : null, [game?.fen]);
   const validMoves = useMemo(() => {
+    if (targetingCard && board) {
+      return cardTargetPositions(
+        targetingCard.card.effectType,
+        board,
+        color,
+        targetingFrom,
+        game?.moves?.length ?? 0,
+      );
+    }
     if (!engine || !selected || game?.turn !== color || game?.state === 'FINISHED') return [];
-    return engine.moves({ square: toAlgebraic(selected) as any, verbose: true }).map(move => ({
+    if (game?.skillEffects?.some(effect => effect.type === 'frozen' && effect.square === toAlgebraic(selected))) return [];
+    return engine.moves({ square: toAlgebraic(selected) as any, verbose: true })
+      .filter(move => !game?.skillEffects?.some(effect =>
+        (effect.type === 'protected' || effect.type === 'matrix') && effect.square === move.to,
+      ))
+      .map(move => ({
       row: 8 - Number(move.to[1]), col: move.to.charCodeAt(0) - 97,
     }));
-  }, [engine, selected, game?.turn, game?.state, color]);
+  }, [engine, selected, game?.turn, game?.state, game?.skillEffects, color, targetingCard, targetingFrom, board, game?.moves?.length]);
   const lastMove = useMemo(() => {
     const moves = game?.moves;
     const move = moves?.[moves.length - 1];
@@ -252,9 +329,96 @@ export const OnlineGameScreen: React.FC = () => {
     ? clockNow - receivedAt.current
     : 0;
   const activeGame = !!game && !isFinished;
+  const canCounter = !!game?.lastSkillCardBy && game.lastSkillCardBy !== color;
+  const handCards = cards.map(card => ({
+    ...card,
+    isUsable: card.card.effectType === 'nope'
+      ? canCounter
+      : card.card.effectType === 'copy'
+        ? isMyTurn && canCounter && !game?.skillCardUsedThisTurn?.[color]
+        : card.card.effectType === 'block'
+          ? isMyTurn && (game?.skillCardCounts?.[opponentColor] ?? 0) > 0 && !game?.skillCardUsedThisTurn?.[color]
+          : isMyTurn && !game?.skillCardUsedThisTurn?.[color],
+  }));
+  const sendSkillCard = (card: CardInHand, targets: Record<string, string> = {}) => {
+    if (!socket?.connected || !activeGame) return;
+    socket.emit('game:use_card', { gameId, cardId: card.card.id, ...targets });
+    setTargetingCard(null);
+    setTargetingFrom(null);
+    setSelectedCard(null);
+    setNotice(`${card.card.name} đã được kích hoạt.`);
+  };
+  const useSkillCard = (card: CardInHand) => {
+    const targeted = new Set([
+      'pawn_step', 'freeze', 'trump', 'high_risk', 'arsenal', 'portal',
+      'start', 'fortune', 'bring_back', 'transformer', 'tele', 'mosquito',
+    ]);
+    setNotice(null);
+    if (!targeted.has(card.card.effectType)) {
+      sendSkillCard(card);
+      return;
+    }
+    setTargetingCard(card);
+    setTargetingFrom(null);
+    setNotice(`Chọn mục tiêu cho ${card.card.name}.`);
+  };
 
   const onSquarePress = (position: BoardPosition) => {
     if (!board || !game || !isMyTurn || !socket?.connected) return;
+    if (targetingCard) {
+      const effect = targetingCard.card.effectType;
+      const piece = board[position.row][position.col];
+      const ownColor = color === 'w' ? 'white' : 'black';
+      if (effect === 'portal' || effect === 'start') {
+        if (!targetingFrom) {
+          const valid = effect === 'portal'
+            ? !!piece && piece.color === ownColor && piece.type !== 'king'
+            : !!piece && piece.color === ownColor && piece.type === 'pawn'
+              && position.row === 6 && game.moves?.length === 0;
+          if (valid) setTargetingFrom(position);
+          return;
+        }
+        const valid = effect === 'portal'
+          ? !!piece && piece.color === ownColor && piece.type !== 'king'
+            && (position.row !== targetingFrom.row || position.col !== targetingFrom.col)
+          : !!piece && piece.color === ownColor
+            && position.row === 7 && position.col === targetingFrom.col;
+        if (valid) {
+          sendSkillCard(targetingCard, {
+            fromSquare: toAlgebraic(targetingFrom),
+            toSquare: toAlgebraic(position),
+          });
+        }
+        return;
+      }
+      if (effect === 'tele') {
+        if (piece?.color === ownColor) sendSkillCard(targetingCard, { square: toAlgebraic(position) });
+        return;
+      }
+      const square = toAlgebraic(position);
+      if (effect === 'trump') {
+        sendSkillCard(targetingCard, { square });
+      } else if (effect === 'fortune' || effect === 'bring_back') {
+        if (piece) return;
+        const targets: Record<string, string> = { square };
+        if (effect === 'bring_back') {
+          const captured = [...(game.moves ?? [])].reverse().find(move =>
+            move.playerId !== playerId && !!move.captured,
+          )?.captured;
+          if (!captured || !['p', 'n', 'b', 'r', 'q'].includes(captured)) {
+            setNotice('Bạn chưa có quân phù hợp để hồi sinh.');
+            return;
+          }
+          targets.pieceType = captured;
+        }
+        sendSkillCard(targetingCard, targets);
+      } else if (['freeze', 'high_risk', 'mosquito'].includes(effect)) {
+        if (piece && piece.color !== ownColor) sendSkillCard(targetingCard, { square });
+      } else if (piece && piece.color === ownColor) {
+        sendSkillCard(targetingCard, { square });
+      }
+      return;
+    }
     if (selected && validMoves.some(move => move.row === position.row && move.col === position.col)) {
       socket.emit('game:move', {
         gameId,
@@ -378,6 +542,9 @@ export const OnlineGameScreen: React.FC = () => {
               board={board}
               selectedSquare={selected}
               validMoves={validMoves}
+              effectSquares={(game.skillEffects ?? [])
+                .filter(effect => effect.movesRemaining > 0 && effect.square)
+                .map(effect => fromAlgebraic(effect.square!))}
               lastMove={lastMove}
               onSquarePress={onSquarePress}
               isFlipped={boardFlipped}
@@ -402,6 +569,15 @@ export const OnlineGameScreen: React.FC = () => {
           time={formatClock(playerTime - elapsedOnTurn)}
           isActive={!!isMyTurn}
           isCurrentPlayer
+        />
+
+        <CardHand
+          cards={handCards}
+          selectedCard={selectedCard}
+          onSelectCard={setSelectedCard}
+          onUseCard={useSkillCard}
+          isPlayerTurn
+          targetingCardId={targetingCard?.card.id}
         />
 
         {notice && <Text style={styles.notice}>{notice}</Text>}

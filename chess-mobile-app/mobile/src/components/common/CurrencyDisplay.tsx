@@ -2,26 +2,31 @@
 // CurrencyDisplay - Gold and Gems display
 // ============================================================
 
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useMemo, useRef } from 'react';
 import { View, Text, StyleSheet, Animated } from 'react-native';
-import { COLORS, SPACING, BORDER_RADIUS, FONT_SIZES, FONT_WEIGHTS } from '../../constants/theme';
+import { SPACING, BORDER_RADIUS, FONT_SIZES, FONT_WEIGHTS } from '../../constants/theme';
+import { COLORS as DARK_COLORS, LIGHT_COLORS } from '../../constants/arcane-colors';
 import { formatCurrency } from '../../utils/formatCurrency';
 
 interface CurrencyDisplayProps {
   gold: number;
   gems: number;
   compact?: boolean;
+  isDark?: boolean;
 }
 
 export const CurrencyDisplay: React.FC<CurrencyDisplayProps> = ({
   gold,
   gems,
   compact = false,
+  isDark = true,
 }) => {
   const goldPulse = useRef(new Animated.Value(1)).current;
   const gemPulse = useRef(new Animated.Value(1)).current;
   const prevGold = useRef(gold);
   const prevGems = useRef(gems);
+  const colors = isDark ? DARK_COLORS : LIGHT_COLORS;
+  const styles = useMemo(() => makeStyles(colors, isDark), [colors, isDark]);
 
   useEffect(() => {
     if (gold !== prevGold.current) {
@@ -62,16 +67,16 @@ export const CurrencyDisplay: React.FC<CurrencyDisplayProps> = ({
   );
 };
 
-const styles = StyleSheet.create({
+const makeStyles = (COLORS: typeof DARK_COLORS, isDark: boolean) => StyleSheet.create({
   container: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: COLORS.bgGlass,
+    backgroundColor: COLORS.backgroundCard,
     borderRadius: BORDER_RADIUS.full,
     paddingHorizontal: SPACING.md,
     paddingVertical: SPACING.sm,
     borderWidth: 1,
-    borderColor: COLORS.surfaceBorder,
+    borderColor: COLORS.border,
     gap: SPACING.sm,
   },
   containerCompact: {
@@ -90,18 +95,18 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
   goldText: {
-    color: COLORS.gold,
+    color: isDark ? '#FCD34D' : '#A16207',
     fontSize: FONT_SIZES.md,
     fontWeight: FONT_WEIGHTS.bold,
   },
   gemText: {
-    color: COLORS.gems,
+    color: isDark ? '#C084FC' : '#7E22CE',
     fontSize: FONT_SIZES.md,
     fontWeight: FONT_WEIGHTS.bold,
   },
   divider: {
     width: 1,
     height: 16,
-    backgroundColor: COLORS.surfaceBorder,
+    backgroundColor: COLORS.border,
   },
 });

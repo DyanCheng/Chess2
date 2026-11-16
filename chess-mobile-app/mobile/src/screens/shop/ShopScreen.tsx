@@ -2,9 +2,10 @@
 // ShopScreen - Store for skins, cards, and currency
 // ============================================================
 
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, View, Text, StyleSheet, ScrollView, SafeAreaView, ActivityIndicator } from 'react-native';
-import { COLORS, SPACING, FONT_SIZES, FONT_WEIGHTS } from '../../constants/theme';
+import { SPACING, FONT_SIZES, FONT_WEIGHTS } from '../../constants/theme';
+import { COLORS as DARK_COLORS, LIGHT_COLORS } from '../../constants/arcane-colors';
 import { ShopItem, useShopStore } from '../../store/shopStore';
 import { usePlayerStore } from '../../store/playerStore';
 import { useCardStore } from '../../store/cardStore';
@@ -18,8 +19,12 @@ import {
   isPurchaseCancelled,
   purchaseIapProduct,
 } from '../../services/iap/revenueCat';
+import { useArcaneThemeStore } from '../../store/arcaneThemeStore';
 
 export const ShopScreen: React.FC = () => {
+  const isDark = useArcaneThemeStore(state => state.isDark);
+  const colors = isDark ? DARK_COLORS : LIGHT_COLORS;
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const {
     items, featuredItems, selectedCategory, isLoading,
     setCategory, setServerItems, applyPurchase, setStorePrices, setLoading,
@@ -196,7 +201,7 @@ export const ShopScreen: React.FC = () => {
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Cửa Hàng</Text>
-        <CurrencyDisplay gold={profile.gold} gems={profile.gems} compact />
+        <CurrencyDisplay gold={profile.gold} gems={profile.gems} compact isDark={isDark} />
       </View>
 
       <View style={styles.categoryScroll}>
@@ -221,7 +226,7 @@ export const ShopScreen: React.FC = () => {
             <Text style={styles.iapMessage}>{iapMessage}</Text>
           </View>
           {isLoading || purchasingId ? (
-            <ActivityIndicator color={COLORS.accent} />
+            <ActivityIndicator color={colors.primary} />
           ) : (
             <GradientButton
               title="Đồng bộ giao dịch"
@@ -248,6 +253,7 @@ export const ShopScreen: React.FC = () => {
                 <ShopItemCard
                   key={item.id}
                   item={item}
+                  isDark={isDark}
                   onPress={() => {}}
                   onBuy={() => handleBuy(item)}
                   isLoading={purchasingId === item.id}
@@ -266,6 +272,7 @@ export const ShopScreen: React.FC = () => {
               <ShopItemCard
                 key={item.id}
                 item={item}
+                isDark={isDark}
                 onPress={() => {}}
                 onBuy={() => handleBuy(item)}
                 isLoading={purchasingId === item.id}
@@ -280,10 +287,10 @@ export const ShopScreen: React.FC = () => {
   );
 };
 
-const styles = StyleSheet.create({
+const makeStyles = (COLORS: typeof DARK_COLORS) => StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: COLORS.bgDark,
+    backgroundColor: COLORS.background,
   },
   header: {
     flexDirection: 'row',
@@ -292,8 +299,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: SPACING.lg,
     paddingVertical: SPACING.md,
     borderBottomWidth: 1,
-    borderBottomColor: COLORS.surfaceBorder,
-    backgroundColor: COLORS.bgCard,
+    borderBottomColor: COLORS.border,
+    backgroundColor: COLORS.backgroundCard,
   },
   headerTitle: {
     color: COLORS.textPrimary,
@@ -302,7 +309,7 @@ const styles = StyleSheet.create({
   },
   categoryScroll: {
     borderBottomWidth: 1,
-    borderBottomColor: COLORS.surfaceBorder,
+    borderBottomColor: COLORS.border,
   },
   categoryContainer: {
     paddingHorizontal: SPACING.md,
@@ -323,8 +330,8 @@ const styles = StyleSheet.create({
     marginBottom: SPACING.xl,
   },
   iapPanel: {
-    backgroundColor: COLORS.bgCard,
-    borderColor: COLORS.surfaceBorder,
+    backgroundColor: COLORS.backgroundCard,
+    borderColor: COLORS.border,
     borderWidth: 1,
     borderRadius: 12,
     padding: SPACING.md,

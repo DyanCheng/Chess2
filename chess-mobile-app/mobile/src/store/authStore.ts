@@ -1,9 +1,8 @@
 import { create } from 'zustand';
-import * as SecureStore from 'expo-secure-store';
 import { apiService, AuthSessionResponse } from '../services/api/apiService';
+import { SupabaseAuthError, supabaseAuth } from '../services/supabaseAuth';
+import { authTokenStorage } from '../services/authTokenStorage';
 import { resetIapUser } from '../services/iap/revenueCat';
-
-const REFRESH_KEY = 'arcane_chess_refresh_token';
 
 interface AuthState {
   isAuthenticated: boolean;
@@ -18,23 +17,32 @@ interface AuthState {
   enterGuestMode: () => void;
   exitGuestMode: () => void;
   login: (email: string, password: string) => Promise<void>;
-  register: (email: string, password: string, username: string) => Promise<boolean>;
+  register: (email: string, password: string, username: string) => Promise<void>;
   logout: () => Promise<void>;
   clearError: () => void;
 }
 
-async function saveSession(session: AuthSessionResponse) {
-  if (!session.accessToken || !session.refreshToken) throw new Error('Máy chủ không trả phiên đăng nhập');
-  await SecureStore.setItemAsync(REFRESH_KEY, session.refreshToken);
+async function saveSession(session: Pick<AuthSessionResponse, 'accessToken' | 'refreshToken'>) {
+  if (!session.accessToken || !session.refreshToken) throw new Error('Không nhận được phiên đăng nhập hợp lệ.');
   apiService.setToken(session.accessToken);
-  return {
-    isAuthenticated: true,
-    isGuest: false,
-    userId: session.user.id,
-    email: session.user.email,
-    username: session.user.username,
-    error: null,
-  };
+  try {
+    const profile = await apiService.getProfile();
+    if (profile.error || !profile.data) {
+      throw new Error(profile.error || 'Không thể tải hồ sơ người chơi.');
+    }
+    await authTokenStorage.setRefreshToken(session.refreshToken);
+    return {
+      isAuthenticated: true,
+      isGuest: false,
+      userId: profile.data.id,
+      email: profile.data.email,
+      username: profile.data.username,
+      error: null,
+    };
+  } catch (error) {
+    apiService.clearToken();
+    throw error;
+  }
 }
 
 export const useAuthStore = create<AuthState>()((set) => ({
@@ -49,14 +57,18 @@ export const useAuthStore = create<AuthState>()((set) => ({
 
   hydrate: async () => {
     try {
-      const refreshToken = await SecureStore.getItemAsync(REFRESH_KEY);
+      const refreshToken = await authTokenStorage.getRefreshToken();
       if (!refreshToken) return;
-      const response = await apiService.refreshSession(refreshToken);
-      if (response.error || !response.data) throw new Error(response.error || 'Không khôi phục được phiên');
-      set(await saveSession(response.data));
-    } catch {
+      const session = await supabaseAuth.refreshSession(refreshToken);
+      set(await saveSession({
+        accessToken: session.accessToken,
+        refreshToken: session.refreshToken,
+      }));
+    } catch (error) {
+      if (error instanceof SupabaseAuthError && (error.status === 400 || error.status === 401)) {
+        await authTokenStorage.deleteRefreshToken();
+      }
       apiService.clearToken();
-      // Keep the refresh token when the backend is merely offline.
       set({ isAuthenticated: false, userId: null, email: null, username: null });
     } finally {
       set({ isHydrated: true });
@@ -70,9 +82,11 @@ export const useAuthStore = create<AuthState>()((set) => ({
   login: async (email, password) => {
     set({ isLoading: true, error: null });
     try {
-      const response = await apiService.login(email, password);
-      if (response.error || !response.data) throw new Error(response.error || 'Đăng nhập thất bại');
-      set(await saveSession(response.data));
+      const session = await supabaseAuth.signInWithPassword(email, password);
+      set(await saveSession({
+        accessToken: session.accessToken,
+        refreshToken: session.refreshToken,
+      }));
     } catch (reason) {
       const message = reason instanceof Error ? reason.message : 'Đăng nhập thất bại';
       set({ error: message });
@@ -87,9 +101,7 @@ export const useAuthStore = create<AuthState>()((set) => ({
     try {
       const response = await apiService.register(email, password, username);
       if (response.error || !response.data) throw new Error(response.error || 'Đăng ký thất bại');
-      if (response.data.emailConfirmationRequired) return true;
       set(await saveSession(response.data));
-      return false;
     } catch (reason) {
       const message = reason instanceof Error ? reason.message : 'Đăng ký thất bại';
       set({ error: message });
@@ -101,7 +113,7 @@ export const useAuthStore = create<AuthState>()((set) => ({
 
   logout: async () => {
     await resetIapUser().catch(() => undefined);
-    await SecureStore.deleteItemAsync(REFRESH_KEY);
+    await authTokenStorage.deleteRefreshToken();
     apiService.clearToken();
     set({
       isAuthenticated: false,

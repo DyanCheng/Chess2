@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, StatusBar } from 'react-native';
 import { COLORS, LIGHT_COLORS } from '../../constants/arcane-colors';
 import { SPACING, FONT_SIZE, FONT_WEIGHT, BORDER_RADIUS, SHADOW } from '../../constants/arcane-theme';
+import { useArcaneThemeStore } from '../../store/arcaneThemeStore';
 
 const AVATAR_IMG = require('../../assets/images/champion_avatar.jpg');
 
@@ -273,12 +274,13 @@ const MyRank = () => {
 // SCREEN
 // ============================================================
 const RankingScreen = () => {
-  const [isDark, setIsDark] = useState(true);
+  const isDark = useArcaneThemeStore(state => state.isDark);
+  const toggleTheme = useArcaneThemeStore(state => state.toggleTheme);
   const colors: Palette = isDark ? COLORS : LIGHT_COLORS;
   const styles = React.useMemo(() => makeStyles(colors), [isDark]);
   const ctx = React.useMemo(
-    () => ({ isDark, toggle: () => setIsDark(v => !v), colors, styles }),
-    [isDark, styles],
+    () => ({ isDark, toggle: toggleTheme, colors, styles }),
+    [isDark, styles, toggleTheme],
   );
 
   return (

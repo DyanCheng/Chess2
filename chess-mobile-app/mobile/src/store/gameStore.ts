@@ -3,13 +3,18 @@
 // ============================================================
 
 import { create } from 'zustand';
-import { BoardState, BoardPosition, ChessMove, PieceColor } from '../types/chess';
-import { CardEffect, CardInHand } from '../types/card';
+import { BoardState, BoardPosition, ChessMove, PieceColor, ChessPiece } from '../types/chess';
+import { CardEffect, CardEffectType, CardInHand } from '../types/card';
 import { GameMode, GameState, GameStatus, GameTimer } from '../types/game';
 import { PlayerHP } from '../types/player';
 import { INITIAL_BOARD, INITIAL_HP } from '../constants/chess';
-import { calculateHPDamage } from '../utils/chessUtils';
-import { applyLocalMove, localBoard, localLegalMoves, resetLocalChess } from '../services/game/localChess';
+import { calculateHPDamage, fromAlgebraic } from '../utils/chessUtils';
+import { applyLocalMove, localBoard, localLegalMoves, replaceLocalPosition, resetLocalChess } from '../services/game/localChess';
+import { toAlgebraic } from '../utils/chessUtils';
+
+const PIECE_BOUND_CARD_EFFECTS = new Set<CardEffectType>([
+  'pawn_step', 'freeze', 'high_risk', 'arsenal', 'mosquito', 'matrix', 'transformer',
+]);
 
 interface GameStore {
   // Game state
@@ -35,8 +40,16 @@ interface GameStore {
 
   // Cards
   playerCards: CardInHand[];
+  drawPile: CardInHand[];
+  discardPile: CardInHand[];
   activeEffects: CardEffect[];
   selectedCard: CardInHand | null;
+  targetingCard: CardInHand | null;
+  targetingStep: 'first' | 'second' | null;
+  targetingFrom: BoardPosition | null;
+  cardUsedThisTurn: boolean;
+  previousBoard: BoardState | null;
+  previousTurn: PieceColor | null;
 
   // UI state
   isPromoting: boolean;
@@ -50,6 +63,7 @@ interface GameStore {
   makeMove: (from: BoardPosition, to: BoardPosition) => void;
   selectCard: (card: CardInHand | null) => void;
   useCard: (card: CardInHand) => void;
+  selectCardTarget: (pos: BoardPosition) => void;
   updateTimer: () => void;
   agreeDraw: () => void;
   resignGame: () => void;
@@ -57,6 +71,354 @@ interface GameStore {
   setBoard: (board: BoardState) => void;
   applyDamage: (color: PieceColor, amount: number) => void;
   applyHeal: (color: PieceColor, amount: number) => void;
+}
+
+type GameSetter = (
+  partial: Partial<GameStore> | ((state: GameStore) => Partial<GameStore>),
+) => void;
+type GameGetter = () => GameStore;
+
+export function getLocalMoveRules(effects: CardEffect[]) {
+  return {
+    frozenSquares: effects.filter(effect => effect.isActive && effect.effectType === 'freeze' && effect.targetSquare)
+      .map(effect => effect.targetSquare!),
+    protectedSquares: effects.filter(effect => effect.isActive && ['arsenal', 'pawn_step', 'matrix'].includes(effect.effectType) && effect.targetSquare)
+      .map(effect => effect.targetSquare!),
+    pawnStepSquares: effects.filter(effect => effect.isActive && effect.effectType === 'pawn_step' && effect.targetSquare)
+      .map(effect => effect.targetSquare!),
+    pawnBackwardColors: effects.some(effect => effect.isActive && effect.effectType === 'mu')
+      ? [effects.find(effect => effect.isActive && effect.effectType === 'mu')!.targetPlayerId]
+      : [],
+    transformers: effects
+      .filter(effect => effect.isActive && effect.effectType === 'transformer' && effect.targetSquare)
+      .map(effect => ({ square: effect.targetSquare!, types: effect.movementTypes ?? [] })),
+  };
+}
+
+function consumeSkillCard(
+  state: GameStore,
+  card: CardInHand,
+): Partial<GameStore> {
+  return {
+    playerCards: state.playerCards.map(item =>
+      (item.instanceId ?? item.card.id) === (card.instanceId ?? card.card.id)
+        ? { ...item, usesRemaining: Math.max(0, item.usesRemaining - 1) }
+        : item,
+    ),
+    discardPile: state.playerCards.some(item =>
+      (item.instanceId ?? item.card.id) === (card.instanceId ?? card.card.id),
+    )
+      ? [...state.discardPile, { ...card, usesRemaining: 0 }]
+      : state.discardPile,
+    selectedCard: null,
+    targetingCard: null,
+    targetingStep: null,
+    targetingFrom: null,
+    validMoves: [],
+    cardUsedThisTurn: true,
+  };
+}
+
+function getTargetPositions(
+  effect: CardEffectType,
+  board: BoardState,
+  color: PieceColor,
+  from: BoardPosition | null = null,
+): BoardPosition[] {
+  const positions: BoardPosition[] = [];
+  for (let row = 0; row < 8; row += 1) {
+    for (let col = 0; col < 8; col += 1) {
+      const piece = board[row][col];
+      let valid = false;
+      if (effect === 'portal') valid = !!piece && piece.color === color && piece.type !== 'king';
+      else if (effect === 'start') {
+        valid = !!piece && piece.color === color && (from
+          ? row === 7 && col === from.col
+          : piece.type === 'pawn' && row === 6);
+      } else if (effect === 'tele') {
+        valid = from ? !piece : !!piece && piece.color === color && piece.type !== 'king';
+      } else if (effect === 'trump') valid = true;
+      else if (effect === 'fortune' || effect === 'bring_back') valid = !piece;
+      else if (['freeze', 'high_risk', 'mosquito'].includes(effect)) valid = !!piece && piece.color !== color;
+      else valid = !!piece && piece.color === color;
+      if (valid) positions.push({ row, col });
+    }
+  }
+  return positions;
+}
+
+function applyImmediateCard(card: CardInHand, get: GameGetter, set: GameSetter): void {
+  const state = get();
+  const { effectType } = card.card;
+  if (!card.isUsable) return;
+  const effect = (type: CardEffectType, turns: number, value = 0): CardEffect => ({
+    id: `effect_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+    cardId: card.card.id,
+    effectType: type,
+    targetPlayerId: state.playerColor,
+    turnsRemaining: turns,
+    value,
+    isActive: true,
+  });
+
+  switch (effectType) {
+    case 'back_to_future':
+      if (state.previousBoard && state.previousTurn && state.moveHistory.length > 0) {
+        replaceLocalPosition(state.previousBoard, state.previousTurn);
+        set({
+          board: state.previousBoard,
+          currentTurn: state.previousTurn,
+          moveHistory: state.moveHistory.slice(0, -1),
+          lastMove: null,
+          previousBoard: null,
+          previousTurn: null,
+        });
+      }
+      break;
+    case 'mu':
+      set({ activeEffects: [...state.activeEffects, effect('mu', 9999)] });
+      break;
+    case 'matrix': {
+      const positions = Array.from({ length: 8 }, (_, index) => ({ row: 7 - index, col: index }));
+      const occupied = positions.filter(position => state.board[position.row][position.col]);
+      if (occupied.length >= 5) {
+        const effects = occupied
+          .map(position => ({
+            ...effect('matrix', 6),
+            targetSquare: toAlgebraic(position),
+          }));
+        set({ activeEffects: [...state.activeEffects, ...effects] });
+      }
+      break;
+    }
+    case 'arsenal_plus':
+      set({ activeEffects: [...state.activeEffects, effect('arsenal_plus', 9999, 1)] });
+      break;
+    case 'hide_king': {
+      let king: BoardPosition | null = null;
+      const rooks: BoardPosition[] = [];
+      state.board.forEach((row, rowIndex) => row.forEach((piece, colIndex) => {
+        if (piece?.color !== state.playerColor) return;
+        if (piece.type === 'king') king = { row: rowIndex, col: colIndex };
+        if (piece.type === 'rook') rooks.push({ row: rowIndex, col: colIndex });
+      }));
+      if (king && rooks.length > 0) {
+        rooks.sort((a, b) =>
+          Math.abs(a.row - king!.row) + Math.abs(a.col - king!.col)
+          - Math.abs(b.row - king!.row) - Math.abs(b.col - king!.col),
+        );
+        const rook = rooks[0];
+        const nextBoard = state.board.map(row => row.map(piece => piece ? { ...piece } : null));
+        const kingPiece = nextBoard[king.row][king.col];
+        nextBoard[king.row][king.col] = nextBoard[rook.row][rook.col];
+        nextBoard[rook.row][rook.col] = kingPiece;
+        replaceLocalPosition(nextBoard, state.currentTurn);
+        set({ board: nextBoard });
+      }
+      break;
+    }
+    case 'vckbla':
+      get().resignGame();
+      return;
+    case 'shuffle': {
+      const cards = [...state.drawPile];
+      for (let index = cards.length - 1; index > 0; index -= 1) {
+        const swapIndex = Math.floor(Math.random() * (index + 1));
+        [cards[index], cards[swapIndex]] = [cards[swapIndex], cards[index]];
+      }
+      set({ drawPile: cards });
+      break;
+    }
+    case 'greed': {
+      const drawPile = [...state.drawPile];
+      const discardPile = [...state.discardPile];
+      if (drawPile.length < 2 && discardPile.length) {
+        drawPile.push(...discardPile.splice(0));
+        for (let index = drawPile.length - 1; index > 0; index -= 1) {
+          const swapIndex = Math.floor(Math.random() * (index + 1));
+          [drawPile[index], drawPile[swapIndex]] = [drawPile[swapIndex], drawPile[index]];
+        }
+      }
+      const drawn = drawPile.splice(0, 2);
+      set({ playerCards: [...state.playerCards, ...drawn], drawPile, discardPile });
+      break;
+    }
+    default:
+      break;
+  }
+  set(current => consumeSkillCard(current, card));
+}
+
+function completeTargetCard(
+  card: CardInHand,
+  board: BoardState,
+  position: BoardPosition,
+  from: BoardPosition | null,
+  get: GameGetter,
+  set: GameSetter,
+): void {
+  const state = get();
+  const effectType = card.card.effectType;
+  const square = toAlgebraic(position);
+  const nextBoard = board.map(row => row.map(piece => piece ? { ...piece } : null));
+  const effect = (type: CardEffectType, turns: number, targetSquare: string, value = 0): CardEffect => ({
+    id: `effect_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+    cardId: card.card.id,
+    effectType: type,
+    targetPlayerId: state.playerColor,
+    turnsRemaining: turns,
+    value,
+    isActive: true,
+    targetSquare,
+  });
+  let effects = state.activeEffects;
+  let endTurn = false;
+
+  switch (effectType) {
+    case 'pawn_step':
+      effects = [...effects, effect('pawn_step', 2, square)];
+      break;
+    case 'freeze':
+      effects = [...effects, effect('freeze', 2, square)];
+      break;
+    case 'trump':
+      effects = [...effects, effect('trump', 3, square)];
+      break;
+    case 'high_risk':
+      effects = [...effects, effect('high_risk', 14, square, 2), effect('freeze', 14, square)];
+      break;
+    case 'arsenal': {
+      const bonus = effects.filter(item => item.effectType === 'arsenal_plus' && item.isActive)
+        .reduce((total, item) => total + item.value, 0);
+      effects = [
+        ...effects.filter(item => item.effectType !== 'arsenal_plus'),
+        effect('arsenal', 6 + bonus, square),
+      ];
+      break;
+    }
+    case 'portal':
+      if (from) endTurn = true;
+      break;
+    case 'start':
+      if (state.moveHistory.length !== 0 || !from) return;
+      break;
+    case 'fortune': {
+      if (nextBoard[position.row][position.col]) return;
+      const hp = state.playerColor === 'white' ? state.whiteHP : state.blackHP;
+      const newHP = Math.max(0, Math.floor(hp.current * 0.2));
+      nextBoard[position.row][position.col] = {
+        id: `${state.playerColor}_queen_${square}`,
+        type: 'queen',
+        color: state.playerColor,
+      };
+      set(state.playerColor === 'white'
+        ? { whiteHP: { ...state.whiteHP, current: newHP } }
+        : { blackHP: { ...state.blackHP, current: newHP } });
+      if (newHP === 0) get().applyDamage(state.playerColor, 0);
+      break;
+    }
+    case 'bring_back': {
+      if (nextBoard[position.row][position.col]) return;
+      const captured = [...state.moveHistory].reverse().find(move => move.captured?.color === state.playerColor)?.captured;
+      if (!captured) return;
+      nextBoard[position.row][position.col] = { ...captured, id: `${captured.id}_revived_${Date.now()}` };
+      break;
+    }
+    case 'tele': {
+      const fromPosition = from;
+      if (!fromPosition) return;
+      const empty: BoardPosition[] = [];
+      for (let row = 0; row < 8; row += 1) {
+        for (let col = 0; col < 8; col += 1) {
+          if (!nextBoard[row][col]) empty.push({ row, col });
+        }
+      }
+      const destination = empty[Math.floor(Math.random() * empty.length)];
+      if (!destination) return;
+      nextBoard[destination.row][destination.col] = nextBoard[fromPosition.row][fromPosition.col];
+      nextBoard[fromPosition.row][fromPosition.col] = null;
+      const sourceSquare = toAlgebraic(fromPosition);
+      const destinationSquare = toAlgebraic(destination);
+      effects = effects.map(item => ({
+        ...item,
+        targetSquare: item.targetSquare === sourceSquare &&
+          PIECE_BOUND_CARD_EFFECTS.has(item.effectType)
+          ? destinationSquare
+          : item.targetSquare,
+      }));
+      break;
+    }
+    case 'mosquito':
+      effects = [...effects, effect('freeze', 9999, square), effect('mosquito', 9999, square, 1)];
+      break;
+    case 'transformer': {
+      const representative = nextBoard[position.row][position.col];
+      if (!representative) return;
+      const movementTypes = new Set(
+        nextBoard.flat()
+          .filter(piece => piece?.color === state.playerColor)
+          .map(piece => piece!.type),
+      );
+      const mergedSquares = nextBoard.flatMap((row, rowIndex) => row.flatMap((piece, colIndex) =>
+        piece?.color === state.playerColor && piece.type !== 'king' &&
+          (rowIndex !== position.row || colIndex !== position.col)
+          ? [toAlgebraic({ row: rowIndex, col: colIndex })]
+          : [],
+      ));
+      effects = effects.map(item => ({
+        ...item,
+        targetSquare: item.targetSquare && mergedSquares.includes(item.targetSquare) &&
+          PIECE_BOUND_CARD_EFFECTS.has(item.effectType)
+          ? square
+          : item.targetSquare,
+      }));
+      for (let row = 0; row < 8; row += 1) {
+        for (let col = 0; col < 8; col += 1) {
+          if (row === position.row && col === position.col) continue;
+          if (nextBoard[row][col]?.color === state.playerColor && nextBoard[row][col]?.type !== 'king') {
+            nextBoard[row][col] = null;
+          }
+        }
+      }
+      effects = [...effects, {
+        ...effect('transformer', 9999, square),
+        movementTypes: [...movementTypes],
+      }];
+      break;
+    }
+    default:
+      return;
+  }
+
+  const boardChanges = ['portal', 'start', 'fortune', 'bring_back', 'tele', 'transformer'].includes(effectType);
+  if ((effectType === 'portal' || effectType === 'start') && from) {
+    const firstSquare = toAlgebraic(from);
+    const secondSquare = square;
+    effects = effects.map(item => ({
+      ...item,
+      targetSquare: !PIECE_BOUND_CARD_EFFECTS.has(item.effectType)
+        ? item.targetSquare
+        : item.targetSquare === firstSquare
+        ? secondSquare
+        : item.targetSquare === secondSquare ? firstSquare : item.targetSquare,
+    }));
+  }
+  if (boardChanges) {
+    replaceLocalPosition(nextBoard, endTurn
+      ? (state.playerColor === 'white' ? 'black' : 'white')
+      : state.currentTurn);
+  }
+  set(current => ({
+    ...consumeSkillCard(current, card),
+    board: nextBoard,
+    currentTurn: endTurn ? (state.playerColor === 'white' ? 'black' : 'white') : state.currentTurn,
+    timer: endTurn ? { ...state.timer, isWhiteTurn: state.playerColor === 'black' } : state.timer,
+    activeEffects: effects,
+    targetingCard: null,
+    targetingStep: null,
+    targetingFrom: null,
+    selectedCard: null,
+  }));
 }
 
 export const useGameStore = create<GameStore>()((set, get) => ({
@@ -85,8 +447,16 @@ export const useGameStore = create<GameStore>()((set, get) => ({
   blackHP: { current: INITIAL_HP, max: INITIAL_HP, shield: 0 },
 
   playerCards: [],
+  drawPile: [],
+  discardPile: [],
   activeEffects: [],
   selectedCard: null,
+  targetingCard: null,
+  targetingStep: null,
+  targetingFrom: null,
+  cardUsedThisTurn: false,
+  previousBoard: null,
+  previousTurn: null,
 
   isPromoting: false,
   promotionPosition: null,
@@ -118,8 +488,16 @@ export const useGameStore = create<GameStore>()((set, get) => ({
       whiteHP: { current: INITIAL_HP, max: INITIAL_HP, shield: 0 },
       blackHP: { current: INITIAL_HP, max: INITIAL_HP, shield: 0 },
       playerCards: [],
+      drawPile: [],
+      discardPile: [],
       activeEffects: [],
       selectedCard: null,
+      targetingCard: null,
+      targetingStep: null,
+      targetingFrom: null,
+      cardUsedThisTurn: false,
+      previousBoard: null,
+      previousTurn: null,
       isPromoting: false,
       promotionPosition: null,
       showGameOverModal: false,
@@ -129,8 +507,12 @@ export const useGameStore = create<GameStore>()((set, get) => ({
 
   // Select a square on the board
   selectSquare: (pos) => {
-    const { board, currentTurn, playerColor, selectedSquare, validMoves, status } = get();
+    const { board, currentTurn, playerColor, selectedSquare, validMoves, status, targetingCard } = get();
     if (status !== 'playing') return;
+    if (targetingCard) {
+      get().selectCardTarget(pos);
+      return;
+    }
 
     // If clicking on a valid move destination, execute the move
     if (selectedSquare && validMoves.some(m => m.row === pos.row && m.col === pos.col)) {
@@ -142,7 +524,7 @@ export const useGameStore = create<GameStore>()((set, get) => ({
 
     // If clicking on player's own piece, select it
     if (piece && piece.color === currentTurn && piece.color === playerColor) {
-      const moves = localLegalMoves(pos);
+      const moves = localLegalMoves(pos, getLocalMoveRules(get().activeEffects));
       set({
         selectedSquare: pos,
         validMoves: moves,
@@ -154,16 +536,19 @@ export const useGameStore = create<GameStore>()((set, get) => ({
 
   // Execute a chess move
   makeMove: (from, to) => {
-    const { currentTurn, moveHistory, timer, status } = get();
+    const { currentTurn, moveHistory, timer, status, board, activeEffects, playerColor } = get();
     if (status !== 'playing') return;
-    const result = applyLocalMove(from, to);
+    const result = applyLocalMove(from, to, getLocalMoveRules(activeEffects));
     if (!result) return;
     const { board: newBoard, captured, move } = result;
 
     // Calculate HP damage if piece was captured
     if (captured) {
-      const damageMultiplier = get().activeEffects.some(
-        e => e.effectType === 'double_damage' && e.isActive
+      const damageMultiplier = get().activeEffects.some(e =>
+        e.isActive && (
+          e.effectType === 'double_damage' ||
+          (e.effectType === 'high_risk' && e.targetSquare === toAlgebraic(from) && e.turnsRemaining > 0)
+        ),
       ) ? 2 : 1;
       const damage = calculateHPDamage(captured, damageMultiplier);
       const targetColor = captured.color;
@@ -192,6 +577,15 @@ export const useGameStore = create<GameStore>()((set, get) => ({
     }
 
     const nextTurn = currentTurn === 'white' ? 'black' : 'white';
+    const destinationSquare = toAlgebraic(to);
+    const sourceSquare = toAlgebraic(from);
+    const capturedEffectIds = new Set(activeEffects
+      .filter(effect =>
+        effect.targetSquare === destinationSquare &&
+        effect.targetSquare !== sourceSquare &&
+        PIECE_BOUND_CARD_EFFECTS.has(effect.effectType),
+      )
+      .map(effect => effect.id));
 
     // Add increment to current player's timer
     const newTimer = { ...timer };
@@ -202,36 +596,70 @@ export const useGameStore = create<GameStore>()((set, get) => ({
     }
     newTimer.isWhiteTurn = nextTurn === 'white';
 
-    // Check game end conditions
+    // Apply delayed board effects before checking for game end.
     let gameResult = null;
     let showGameOverModal = false;
     const inCheck = result.inCheck;
+    const expiringTrump = activeEffects.filter(effect =>
+      effect.effectType === 'trump' && effect.turnsRemaining <= 1,
+    );
+    const finalBoard = newBoard.map(row => row.map(piece => piece ? { ...piece } : null));
+    for (const effect of expiringTrump) {
+      if (!effect.targetSquare) continue;
+      const target = fromAlgebraic(effect.targetSquare);
+      const destroyed = finalBoard[target.row][target.col];
+      finalBoard[target.row][target.col] = null;
+      if (destroyed?.type === 'king') {
+        gameResult = { winner: effect.targetPlayerId, reason: 'Bị tiêu diệt bởi Trump' };
+        showGameOverModal = true;
+      }
+    }
 
-    if (result.checkmate) {
+    const updatedEffects = activeEffects.filter(effect => !capturedEffectIds.has(effect.id)).flatMap(effect => {
+      const targetSquare = effect.targetSquare === sourceSquare &&
+        PIECE_BOUND_CARD_EFFECTS.has(effect.effectType)
+        ? destinationSquare
+        : effect.targetSquare;
+      if (effect.effectType === 'high_risk' && effect.turnsRemaining <= 1) {
+        return [{ ...effect, targetSquare, turnsRemaining: 9999, isActive: true }];
+      }
+      const remaining = effect.turnsRemaining - 1;
+      if (remaining <= 0) return [];
+      return [{
+        ...effect,
+        targetSquare,
+        turnsRemaining: remaining,
+        isActive: true,
+      }];
+    });
+    activeEffects
+      .filter(effect => effect.effectType === 'mosquito' && effect.targetPlayerId !== currentTurn)
+      .forEach(effect => {
+        get().applyDamage(effect.targetPlayerId === 'white' ? 'black' : 'white', effect.value);
+      });
+
+    if (!gameResult && result.checkmate) {
       gameResult = { winner: currentTurn, reason: 'Chiếu hết!' };
       showGameOverModal = true;
-    } else if (result.draw) {
+    } else if (!gameResult && result.draw) {
       gameResult = { winner: 'draw' as const, reason: 'Hết nước đi - Hòa!' };
       showGameOverModal = true;
-    } else if (get().whiteHP.current <= 0) {
+    } else if (!gameResult && get().whiteHP.current <= 0) {
       gameResult = { winner: 'black' as const, reason: 'Hết sinh mệnh!' };
       showGameOverModal = true;
-    } else if (get().blackHP.current <= 0) {
+    } else if (!gameResult && get().blackHP.current <= 0) {
       gameResult = { winner: 'white' as const, reason: 'Hết sinh mệnh!' };
       showGameOverModal = true;
     }
 
-    // Update active effects (decrement turn counters)
-    const updatedEffects = get().activeEffects.map(effect => ({
-      ...effect,
-      turnsRemaining: effect.turnsRemaining - 1,
-      isActive: effect.turnsRemaining - 1 > 0,
-    })).filter(e => e.turnsRemaining > 0);
-
+    if (expiringTrump.length > 0) replaceLocalPosition(finalBoard, nextTurn);
     set({
-      board: newBoard,
+      board: finalBoard,
       currentTurn: nextTurn,
       moveHistory: [...moveHistory, move],
+      previousBoard: board.map(row => row.map(piece => piece ? { ...piece } : null)),
+      previousTurn: currentTurn,
+      cardUsedThisTurn: nextTurn === playerColor ? false : get().cardUsedThisTurn,
       selectedSquare: null,
       validMoves: [],
       lastMove: { from, to },
@@ -247,82 +675,80 @@ export const useGameStore = create<GameStore>()((set, get) => ({
   selectCard: (card) => set({ selectedCard: card }),
 
   useCard: (card) => {
-    // Card usage logic - will interact with the card effect system
-    const { activeEffects, currentTurn, playerColor } = get();
-
+    const { activeEffects, currentTurn, playerColor, status } = get();
+    if (
+      status !== 'playing' ||
+      get().targetingCard ||
+      get().cardUsedThisTurn ||
+      card.usesRemaining <= 0
+    ) return;
+    if (!card.isUsable) return;
     if (currentTurn !== playerColor) return;
 
-    const newEffect: CardEffect = {
-      id: `effect_${Date.now()}`,
-      cardId: card.card.id,
-      effectType: card.card.effectType,
-      targetPlayerId: playerColor,
-      turnsRemaining: card.card.duration || 1,
-      value: card.card.value || 0,
-      isActive: true,
-    };
-
-    // Apply immediate effects
-    switch (card.card.effectType) {
-      case 'heal':
-        get().applyHeal(playerColor, card.card.value || 10);
-        break;
-      case 'shield':
-        if (playerColor === 'white') {
-          set(state => ({
-            whiteHP: { ...state.whiteHP, shield: state.whiteHP.shield + (card.card.value || 8) },
-          }));
-        } else {
-          set(state => ({
-            blackHP: { ...state.blackHP, shield: state.blackHP.shield + (card.card.value || 8) },
-          }));
-        }
-        break;
-      case 'time_bonus':
-        set(state => ({
-          timer: {
-            ...state.timer,
-            ...(playerColor === 'white'
-              ? { whiteTime: state.timer.whiteTime + (card.card.value || 60) }
-              : { blackTime: state.timer.blackTime + (card.card.value || 60) }),
-          },
-        }));
-        break;
-      case 'fortify':
-        if (playerColor === 'white') {
-          set(state => ({
-            whiteHP: {
-              ...state.whiteHP,
-              max: state.whiteHP.max + (card.card.value || 5),
-              current: Math.min(state.whiteHP.current + (card.card.value || 5), state.whiteHP.max + (card.card.value || 5)),
-            },
-          }));
-        } else {
-          set(state => ({
-            blackHP: {
-              ...state.blackHP,
-              max: state.blackHP.max + (card.card.value || 5),
-              current: Math.min(state.blackHP.current + (card.card.value || 5), state.blackHP.max + (card.card.value || 5)),
-            },
-          }));
-        }
-        break;
+    const targeted = new Set([
+      'pawn_step', 'freeze', 'trump', 'high_risk', 'arsenal', 'portal',
+      'start', 'fortune', 'bring_back', 'transformer', 'tele', 'mosquito',
+    ]);
+    if (targeted.has(card.card.effectType)) {
+      set({
+        selectedCard: card,
+        targetingCard: card,
+        targetingStep: ['portal', 'start'].includes(card.card.effectType) ? 'first' : 'first',
+        targetingFrom: null,
+        validMoves: getTargetPositions(card.card.effectType, get().board, playerColor),
+      });
+      return;
     }
 
-    // Add effect to active effects for duration-based cards
-    if (card.card.duration && card.card.duration > 0) {
-      set({ activeEffects: [...activeEffects, newEffect] });
-    }
+    applyImmediateCard(card, get, set);
+  },
 
-    // Update card in hand
-    set(state => ({
-      playerCards: state.playerCards.map(c =>
-        c.card.id === card.card.id
-          ? { ...c, usesRemaining: c.usesRemaining - 1, cooldownRemaining: c.card.cooldownTurns }
-          : c
-      ),
-      selectedCard: null,
-    }));
+  selectCardTarget: (pos) => {
+    const { targetingCard, targetingFrom, board, playerColor } = get();
+    if (!targetingCard) return;
+    const effect = targetingCard.card.effectType;
+    const piece = board[pos.row]?.[pos.col];
+    if (effect === 'tele') {
+      if (piece?.color === playerColor) {
+        completeTargetCard(targetingCard, board, pos, pos, get, set);
+      }
+      return;
+    }
+    if (effect === 'portal' || effect === 'start') {
+      if (!targetingFrom) {
+        const valid = effect === 'portal'
+          ? piece?.color === playerColor && piece.type !== 'king'
+          : piece?.color === playerColor && piece.type === 'pawn' && pos.row === 6;
+        if (valid) set({
+          targetingFrom: pos,
+          targetingStep: 'second',
+          validMoves: getTargetPositions(effect, board, playerColor, pos),
+        });
+        return;
+      }
+      const firstPiece = board[targetingFrom.row][targetingFrom.col];
+      const valid = effect === 'portal'
+        ? piece?.color === playerColor && piece.type !== 'king'
+        : piece?.color === playerColor && pos.row === 7 && pos.col === targetingFrom.col;
+      if (!valid || !firstPiece) return;
+      const swapped = board.map(row => row.map(item => item ? { ...item } : null));
+      swapped[targetingFrom.row][targetingFrom.col] = piece ? { ...piece } : null;
+      swapped[pos.row][pos.col] = { ...firstPiece };
+      completeTargetCard(targetingCard, swapped, pos, targetingFrom, get, set);
+      return;
+    }
+    if (!piece && ['fortune', 'bring_back', 'trump'].includes(effect)) {
+      completeTargetCard(targetingCard, board, pos, null, get, set);
+      return;
+    }
+    if (effect === 'trump') {
+      completeTargetCard(targetingCard, board, pos, null, get, set);
+      return;
+    }
+    const mustBeEnemy = ['freeze', 'high_risk', 'mosquito'].includes(effect);
+    if (piece && (mustBeEnemy ? piece.color !== playerColor : piece.color === playerColor)) {
+      completeTargetCard(targetingCard, board, pos, null, get, set);
+    }
   },
 
   updateTimer: () => {
@@ -394,8 +820,16 @@ export const useGameStore = create<GameStore>()((set, get) => ({
       whiteHP: { current: INITIAL_HP, max: INITIAL_HP, shield: 0 },
       blackHP: { current: INITIAL_HP, max: INITIAL_HP, shield: 0 },
       playerCards: [],
+      drawPile: [],
+      discardPile: [],
       activeEffects: [],
       selectedCard: null,
+      targetingCard: null,
+      targetingStep: null,
+      targetingFrom: null,
+      cardUsedThisTurn: false,
+      previousBoard: null,
+      previousTurn: null,
       isPromoting: false,
       promotionPosition: null,
       showGameOverModal: false,

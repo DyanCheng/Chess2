@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   ActivityIndicator,
@@ -15,26 +15,49 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { COLORS as DARK_COLORS, LIGHT_COLORS } from '../../constants/arcane-colors';
 import { useAuthStore } from '../../store/authStore';
+import { useArcaneThemeStore } from '../../store/arcaneThemeStore';
 
-const COLORS = {
-  background: '#101419',
-  panel: '#191E24',
-  input: '#090D12',
-  border: '#202830',
-  gold: '#F6A10A',
-  goldDark: '#8E5100',
-  cyan: '#39D5ED',
-  cream: '#D5C5B5',
-  muted: '#8E8985',
-  white: '#F5F2EF',
-  error: '#FF8D82',
+type LoginPalette = {
+  background: string;
+  panel: string;
+  input: string;
+  border: string;
+  gold: string;
+  goldDark: string;
+  cyan: string;
+  cream: string;
+  muted: string;
+  white: string;
+  error: string;
+};
+
+const getLoginPalette = (isDark: boolean): LoginPalette => {
+  const palette = isDark ? DARK_COLORS : LIGHT_COLORS;
+  return {
+    background: palette.background,
+    panel: palette.backgroundCard,
+    input: isDark ? palette.backgroundDark : palette.surface,
+    border: palette.border,
+    gold: palette.primary,
+    goldDark: isDark ? '#8E5100' : '#713F12',
+    cyan: isDark ? palette.accent : palette.accentBlue,
+    cream: palette.textPrimary,
+    muted: palette.textMuted,
+    white: palette.textPrimary,
+    error: palette.accentRed,
+  };
 };
 
 const REMEMBERED_EMAIL_KEY = 'arcane_chess_remembered_email';
 
 type AuthTab = 'login' | 'register';
 export const LoginScreen: React.FC = () => {
+  const isDark = useArcaneThemeStore(state => state.isDark);
+  const toggleTheme = useArcaneThemeStore(state => state.toggleTheme);
+  const colors = useMemo(() => getLoginPalette(isDark), [isDark]);
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const login = useAuthStore(state => state.login);
   const register = useAuthStore(state => state.register);
   const enterGuestMode = useAuthStore(state => state.enterGuestMode);
@@ -102,14 +125,7 @@ export const LoginScreen: React.FC = () => {
       }
 
       try {
-        const confirmationRequired = await register(trimmedEmail, password, username.trim());
-        if (confirmationRequired) {
-          setActiveTab('login');
-          setPassword('');
-          setConfirmPassword('');
-          Alert.alert('Kiểm tra email', 'Hãy xác nhận email trước khi đăng nhập.');
-          return;
-        }
+        await register(trimmedEmail, password, username.trim());
       } catch (error) {
         setFormError(error instanceof Error ? error.message : 'Đăng ký thất bại.');
       }
@@ -147,13 +163,23 @@ export const LoginScreen: React.FC = () => {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <StatusBar barStyle="light-content" backgroundColor={COLORS.background} />
+      <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} backgroundColor={colors.background} />
       <View style={styles.topBar}>
         <View style={styles.serverInfo}>
           <View style={styles.statusDot} />
           <Text style={styles.serverName}>ARCANE CHESS</Text>
         </View>
-        <Text style={styles.serverLabel}>TACTICAL RPG</Text>
+        <View style={styles.topBarActions}>
+          <Text style={styles.serverLabel}>TACTICAL RPG</Text>
+          <TouchableOpacity
+            accessibilityRole="button"
+            accessibilityLabel={isDark ? 'Chuyển sang giao diện sáng' : 'Chuyển sang giao diện tối'}
+            onPress={toggleTheme}
+            style={styles.themeButton}
+          >
+            <Text style={styles.themeButtonText}>{isDark ? '☀' : '☾'}</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       <KeyboardAvoidingView
@@ -215,7 +241,7 @@ export const LoginScreen: React.FC = () => {
                     value={username}
                     onChangeText={setUsername}
                     placeholder="Nhập tên của bạn"
-                    placeholderTextColor={COLORS.muted}
+                    placeholderTextColor={colors.muted}
                     autoCapitalize="words"
                     returnKeyType="next"
                   />
@@ -236,7 +262,7 @@ export const LoginScreen: React.FC = () => {
                   value={email}
                   onChangeText={setEmail}
                   placeholder="name@example.com"
-                  placeholderTextColor={COLORS.muted}
+                  placeholderTextColor={colors.muted}
                   keyboardType="email-address"
                   autoCapitalize="none"
                   autoCorrect={false}
@@ -258,7 +284,7 @@ export const LoginScreen: React.FC = () => {
                   value={password}
                   onChangeText={setPassword}
                   placeholder="Nhập mật khẩu"
-                  placeholderTextColor={COLORS.muted}
+                  placeholderTextColor={colors.muted}
                   secureTextEntry={!showPassword}
                   autoCapitalize="none"
                   returnKeyType={activeTab === 'register' ? 'next' : 'go'}
@@ -288,7 +314,7 @@ export const LoginScreen: React.FC = () => {
                     value={confirmPassword}
                     onChangeText={setConfirmPassword}
                     placeholder="Nhập lại mật khẩu"
-                    placeholderTextColor={COLORS.muted}
+                    placeholderTextColor={colors.muted}
                     secureTextEntry={!showPassword}
                     autoCapitalize="none"
                     returnKeyType="go"
@@ -330,7 +356,7 @@ export const LoginScreen: React.FC = () => {
               onPress={handleSubmit}
             >
               {isLoading ? (
-                <ActivityIndicator color={COLORS.goldDark} />
+                <ActivityIndicator color={colors.goldDark} />
               ) : (
                 <Text style={styles.submitButtonText}>
                   ⚔  {activeTab === 'login' ? title : 'TẠO TÀI KHOẢN'}
@@ -372,7 +398,7 @@ export const LoginScreen: React.FC = () => {
 
 export default LoginScreen;
 
-const styles = StyleSheet.create({
+const makeStyles = (COLORS: LoginPalette) => StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: COLORS.background,
@@ -383,6 +409,26 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+  },
+  topBarActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  themeButton: {
+    width: 34,
+    height: 34,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 17,
+    backgroundColor: COLORS.panel,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  themeButtonText: {
+    color: COLORS.gold,
+    fontSize: 20,
+    fontWeight: '700',
   },
   serverInfo: {
     flexDirection: 'row',
@@ -426,7 +472,7 @@ const styles = StyleSheet.create({
     height: 126,
     borderRadius: 24,
     padding: 6,
-    backgroundColor: '#222832',
+    backgroundColor: COLORS.panel,
     marginBottom: 14,
   },
   logo: {
@@ -435,11 +481,11 @@ const styles = StyleSheet.create({
     borderRadius: 19,
   },
   brandTitle: {
-    color: '#FFC477',
+    color: COLORS.gold,
     fontSize: 29,
     fontWeight: '900',
     letterSpacing: 1.7,
-    textShadowColor: 'rgba(246, 161, 10, 0.3)',
+    textShadowColor: COLORS.gold + '4D',
     textShadowOffset: { width: 0, height: 2 },
     textShadowRadius: 12,
   },
@@ -455,7 +501,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     padding: 4,
     borderRadius: 16,
-    backgroundColor: '#080C11',
+    backgroundColor: COLORS.input,
     marginBottom: 16,
   },
   tab: {
@@ -482,7 +528,7 @@ const styles = StyleSheet.create({
     padding: 18,
     backgroundColor: COLORS.panel,
     borderWidth: 1,
-    borderColor: '#20262D',
+    borderColor: COLORS.border,
   },
   inputGroup: {
     marginBottom: 15,
@@ -513,7 +559,7 @@ const styles = StyleSheet.create({
   },
   inputIcon: {
     width: 24,
-    color: '#FFC477',
+    color: COLORS.gold,
     fontSize: 19,
     fontWeight: '700',
   },
@@ -565,7 +611,7 @@ const styles = StyleSheet.create({
     fontSize: 12,
   },
   forgotText: {
-    color: '#FFC477',
+    color: COLORS.cyan,
     fontSize: 12,
     textDecorationLine: 'underline',
   },
@@ -602,7 +648,7 @@ const styles = StyleSheet.create({
   dividerLine: {
     height: 1,
     flex: 1,
-    backgroundColor: '#38414A',
+    backgroundColor: COLORS.border,
   },
   dividerText: {
     color: COLORS.cream,
@@ -621,19 +667,19 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: 14,
-    backgroundColor: '#1C2229',
+    backgroundColor: COLORS.panel,
   },
   googleIcon: {
-    color: '#E8EAED',
+    color: COLORS.white,
     fontSize: 27,
     fontWeight: '700',
   },
   appleIcon: {
-    color: '#E8EAED',
+    color: COLORS.white,
     fontSize: 22,
   },
   facebookIcon: {
-    color: '#E8EAED',
+    color: COLORS.white,
     fontSize: 30,
     fontWeight: '900',
   },
@@ -655,7 +701,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
     textAlign: 'center',
     textDecorationLine: 'underline',
-    textDecorationColor: '#285767',
+    textDecorationColor: COLORS.cyan,
   },
   guestNote: {
     maxWidth: 340,
@@ -677,7 +723,7 @@ const styles = StyleSheet.create({
     letterSpacing: 0.7,
   },
   versionText: {
-    color: '#706B68',
+    color: COLORS.muted,
     fontSize: 11,
     fontWeight: '700',
   },

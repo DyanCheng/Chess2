@@ -17,6 +17,7 @@ import { PlayerInfoBar } from '../../components/game/PlayerInfoBar';
 import { CardHand } from '../../components/cards/CardHand';
 import { GameOverModal } from '../../components/game/GameOverModal';
 import { GradientButton } from '../../components/common/GradientButton';
+import { fromAlgebraic } from '../../utils/chessUtils';
 
 type GameScreenRouteProp = RouteProp<RootStackParamList, 'GamePvE'>;
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
@@ -30,7 +31,7 @@ export const GameScreen: React.FC = () => {
   const {
     gameId, mode, status, board, currentTurn, playerColor,
     validMoves, selectedSquare, lastMove, inCheck, timer, whiteHP, blackHP,
-    playerCards, selectedCard, showGameOverModal, gameResult,
+    playerCards, activeEffects, selectedCard, targetingCard, showGameOverModal, gameResult,
     startPvPGame, startBotGame, selectSquare, selectCard, useCard,
     agreeDraw, resignGame, resetGame, isPlayerTurn, moveCount
   } = useGame();
@@ -183,6 +184,9 @@ export const GameScreen: React.FC = () => {
             board={board}
             selectedSquare={selectedSquare}
             validMoves={validMoves}
+            effectSquares={activeEffects
+              .filter(effect => effect.isActive && effect.targetSquare)
+              .map(effect => fromAlgebraic(effect.targetSquare!))}
             lastMove={lastMove}
             onSquarePress={selectSquare}
             isFlipped={boardFlipped ? playerColor !== 'black' : playerColor === 'black'}
@@ -227,6 +231,7 @@ export const GameScreen: React.FC = () => {
             onSelectCard={selectCard}
             onUseCard={useCard}
             isPlayerTurn={isPlayerTurn}
+            targetingCardId={targetingCard?.card.id}
           />
         </View>
         

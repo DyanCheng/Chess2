@@ -29,6 +29,7 @@ interface ChessBoardProps {
   board: BoardState;
   selectedSquare: BoardPosition | null;
   validMoves: BoardPosition[];
+  effectSquares?: BoardPosition[];
   lastMove: { from: BoardPosition; to: BoardPosition } | null;
   onSquarePress: (pos: BoardPosition) => void;
   isFlipped?: boolean;
@@ -40,6 +41,7 @@ export const ChessBoard: React.FC<ChessBoardProps> = ({
   board,
   selectedSquare,
   validMoves,
+  effectSquares = [],
   lastMove,
   onSquarePress,
   isFlipped = false,
@@ -96,6 +98,7 @@ export const ChessBoard: React.FC<ChessBoardProps> = ({
                   const isSelected = isSelectedSquare(row, col);
                   const isValidMove = isValidMoveSquare(row, col);
                   const isLastMove = isLastMoveSquare(row, col);
+                  const isEffectSquare = effectSquares.some(position => position.row === row && position.col === col);
 
                   return (
                     <ChessSquare
@@ -106,6 +109,7 @@ export const ChessBoard: React.FC<ChessBoardProps> = ({
                       isLight={isLight}
                       isSelected={isSelected}
                       isValidMove={isValidMove}
+                      isEffectSquare={isEffectSquare}
                       isLastMove={isLastMove}
                       isCapture={isValidMove && piece !== null}
                       size={squareSize}

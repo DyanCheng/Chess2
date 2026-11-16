@@ -2,6 +2,8 @@
 // Card (Thẻ bài) Type Definitions
 // ============================================================
 
+import { PieceColor, PieceType } from './chess';
+
 export type CardRarity = 'common' | 'rare' | 'epic' | 'legendary';
 
 export type CardEffectType =
@@ -17,7 +19,29 @@ export type CardEffectType =
   | 'poison'        // Gây sát thương theo thời gian
   | 'mirror'        // Phản chiếu sát thương
   | 'teleport'      // Di chuyển quân cờ đến vị trí bất kỳ
-  | 'fortify';      // Tăng cường phòng thủ
+  | 'fortify'       // Tăng cường phòng thủ
+  | 'pawn_step'
+  | 'trump'
+  | 'back_to_future'
+  | 'high_risk'
+  | 'arsenal'
+  | 'mu'
+  | 'portal'
+  | 'start'
+  | 'fortune'
+  | 'bring_back'
+  | 'arsenal_plus'
+  | 'hide_king'
+  | 'transformer'
+  | 'vckbla'
+  | 'shuffle'
+  | 'greed'
+  | 'block'
+  | 'nope'
+  | 'copy'
+  | 'tele'
+  | 'mosquito'
+  | 'matrix';
 
 export interface Card {
   id: string;
@@ -41,6 +65,7 @@ export interface Card {
 
 export interface CardInHand {
   card: Card;
+  instanceId?: string;
   isUsable: boolean;
   cooldownRemaining: number;
   usesRemaining: number;
@@ -50,10 +75,12 @@ export interface CardEffect {
   id: string;
   cardId: string;
   effectType: CardEffectType;
-  targetPlayerId: string;
+  targetPlayerId: PieceColor;
   turnsRemaining: number;
   value: number;
   isActive: boolean;
+  targetSquare?: string;
+  movementTypes?: PieceType[];
 }
 
 export interface CardUseAnimation {

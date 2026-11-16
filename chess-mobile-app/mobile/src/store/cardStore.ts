@@ -5,6 +5,7 @@
 import { create } from 'zustand';
 import { Card, CardDeck, CardInHand } from '../types/card';
 import { ALL_CARDS } from '../constants/cards';
+import { SKILL_CARDS } from '../constants/skillCards';
 
 interface CardStore {
   ownedCards: Card[];
@@ -121,15 +122,17 @@ export const useCardStore = create<CardStore>()((set, get) => ({
   setActiveDeck: (deck) => set({ activeDeck: deck }),
 
   getHandCards: () => {
-    const { ownedCards } = get();
-    return ownedCards
-      .filter(c => c.quantity > 0)
-      .slice(0, 3)
-      .map(card => ({
+    const deck = [...SKILL_CARDS];
+    for (let index = deck.length - 1; index > 0; index -= 1) {
+      const swapIndex = Math.floor(Math.random() * (index + 1));
+      [deck[index], deck[swapIndex]] = [deck[swapIndex], deck[index]];
+    }
+    return deck.map(card => ({
         card,
+        instanceId: `${card.id}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
         isUsable: true,
         cooldownRemaining: 0,
-        usesRemaining: card.maxPerGame,
+        usesRemaining: 1,
       }));
   },
 }));

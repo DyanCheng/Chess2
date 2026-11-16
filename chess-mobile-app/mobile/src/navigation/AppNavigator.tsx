@@ -2,7 +2,7 @@
 // AppNavigator - Main navigation configuration
 // ============================================================
 
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { NavigationContainer, NavigationProp, useNavigation } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
@@ -29,7 +29,6 @@ import { useAuthStore } from '../store/authStore';
 import { useArcaneThemeStore } from '../store/arcaneThemeStore';
 
 import { RootStackParamList, MainTabParamList } from './types';
-import { COLORS } from '../constants/theme';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 const Tab = createBottomTabNavigator<MainTabParamList>();
@@ -165,12 +164,25 @@ export const AppNavigator = () => {
   const isAuthenticated = useAuthStore(state => state.isAuthenticated);
   const isGuest = useAuthStore(state => state.isGuest);
   const isHydrated = useAuthStore(state => state.isHydrated);
+  const isDark = useArcaneThemeStore(state => state.isDark);
+  const [isThemeHydrated, setIsThemeHydrated] = useState(
+    useArcaneThemeStore.persist.hasHydrated(),
+  );
+  useEffect(() => {
+    if (useArcaneThemeStore.persist.hasHydrated()) {
+      setIsThemeHydrated(true);
+      return;
+    }
+
+    return useArcaneThemeStore.persist.onFinishHydration(() => setIsThemeHydrated(true));
+  }, []);
+  const screenBackground = isDark ? ARCANE_COLORS.background : LIGHT_COLORS.background;
   const canPlay = isAuthenticated || isGuest;
 
-  if (!isHydrated) {
+  if (!isHydrated || !isThemeHydrated) {
     return (
-      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: COLORS.bgDark }}>
-        <ActivityIndicator color={COLORS.primary} />
+      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: screenBackground }}>
+        <ActivityIndicator color={isDark ? ARCANE_COLORS.primary : LIGHT_COLORS.primary} />
       </View>
     );
   }
@@ -182,7 +194,7 @@ export const AppNavigator = () => {
         initialRouteName={canPlay ? 'MainTabs' : 'Login'}
         screenOptions={{
           headerShown: false,
-          contentStyle: { backgroundColor: COLORS.bgDark },
+          contentStyle: { backgroundColor: screenBackground },
         }}
       >
         {canPlay ? (

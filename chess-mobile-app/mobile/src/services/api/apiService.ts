@@ -15,7 +15,14 @@ export interface AuthSessionResponse {
   user: { id: string; email: string; username: string };
   accessToken: string | null;
   refreshToken: string | null;
-  emailConfirmationRequired?: boolean;
+}
+
+export interface PlayerProfileResponse {
+  id: string;
+  email: string;
+  username: string;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface GameModeDefinition {
@@ -67,6 +74,16 @@ export interface RankScreenData {
     pointsAfter: number;
     createdAt: string;
   }>;
+}
+
+export interface PuzzleProgressResponse {
+  today: string;
+  dailyPuzzleId: string;
+  completedPuzzleIds: string[];
+  unlockedPuzzleId: string | null;
+  currentStreak: number;
+  bestStreak: number;
+  lastDailySolvedOn: string | null;
 }
 
 export interface ModeCatalogResponse {
@@ -209,7 +226,7 @@ class ApiService {
 
   // Player endpoints
   async getProfile() {
-    return this.request('GET', '/player/profile');
+    return this.request<PlayerProfileResponse>('GET', '/player/profile');
   }
 
   async updateProfile(data: any) {
@@ -230,6 +247,18 @@ class ApiService {
 
   async getMyRank() {
     return this.request<RankScreenData>('GET', '/rank/me');
+  }
+
+  async getPuzzleProgress() {
+    return this.request<PuzzleProgressResponse>('GET', '/puzzles/progress');
+  }
+
+  async completePuzzle(puzzleId: string, solutionUci: string, dailyChallenge: boolean) {
+    return this.request<PuzzleProgressResponse>('POST', '/puzzles/complete', {
+      puzzleId,
+      solutionUci,
+      dailyChallenge,
+    });
   }
 
   // Game endpoints. New PvP games are created by the authenticated
