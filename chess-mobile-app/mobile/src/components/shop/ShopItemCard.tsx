@@ -2,9 +2,10 @@
 // ShopItemCard - Shop item display card
 // ============================================================
 
-import React, { useRef } from 'react';
+import React, { useMemo, useRef } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Animated } from 'react-native';
-import { COLORS, SPACING, BORDER_RADIUS, FONT_SIZES, FONT_WEIGHTS, SHADOWS } from '../../constants/theme';
+import { SPACING, BORDER_RADIUS, FONT_SIZES, FONT_WEIGHTS, SHADOWS } from '../../constants/theme';
+import { COLORS as DARK_COLORS, LIGHT_COLORS } from '../../constants/arcane-colors';
 import { ShopItem } from '../../store/shopStore';
 import { RARITY_CONFIG } from '../../constants/cards';
 
@@ -12,10 +13,22 @@ interface ShopItemCardProps {
   item: ShopItem;
   onPress: () => void;
   onBuy: () => void;
+  isDark?: boolean;
+  isLoading?: boolean;
+  disabled?: boolean;
 }
 
-export const ShopItemCard: React.FC<ShopItemCardProps> = ({ item, onPress, onBuy }) => {
+export const ShopItemCard: React.FC<ShopItemCardProps> = ({
+  item,
+  onPress,
+  onBuy,
+  isDark = true,
+  isLoading = false,
+  disabled = false,
+}) => {
   const scaleAnim = useRef(new Animated.Value(1)).current;
+  const colors = isDark ? DARK_COLORS : LIGHT_COLORS;
+  const styles = useMemo(() => makeStyles(colors, isDark), [colors, isDark]);
 
   const handlePressIn = () => {
     Animated.spring(scaleAnim, {
@@ -53,7 +66,8 @@ export const ShopItemCard: React.FC<ShopItemCardProps> = ({ item, onPress, onBuy
     }
   };
 
-  const rarityColor = item.rarity ? RARITY_CONFIG[item.rarity]?.color : COLORS.textMuted;
+  const rarityColor = item.rarity ? RARITY_CONFIG[item.rarity]?.color : colors.textMuted;
+  const canPurchase = item.currencyType === 'real' || !item.isOwned || item.canPurchaseMultiple;
 
   return (
     <Animated.View style={[styles.wrapper, { transform: [{ scale: scaleAnim }] }]}>
@@ -65,7 +79,7 @@ export const ShopItemCard: React.FC<ShopItemCardProps> = ({ item, onPress, onBuy
         style={[
           styles.card,
           {
-            borderColor: item.rarity ? RARITY_CONFIG[item.rarity]?.borderColor : COLORS.surfaceBorder,
+            borderColor: item.rarity ? RARITY_CONFIG[item.rarity]?.borderColor : colors.border,
           },
         ]}
       >
@@ -97,13 +111,21 @@ export const ShopItemCard: React.FC<ShopItemCardProps> = ({ item, onPress, onBuy
         </Text>
 
         {/* Price */}
-        {!item.isOwned ? (
-          <TouchableOpacity onPress={onBuy} style={styles.buyButton}>
+        {canPurchase ? (
+          <TouchableOpacity
+            onPress={onBuy}
+            disabled={disabled || isLoading}
+            style={[styles.buyButton, (disabled || isLoading) && styles.buyButtonDisabled]}
+          >
             <Text style={styles.priceIcon}>{getPriceIcon()}</Text>
             <Text style={styles.priceText}>
-              {item.currencyType === 'real'
-                ? (item.localizedPrice || `$${(item.price / 100).toFixed(2)}`)
-                : item.price}
+              {isLoading
+                ? 'Đang mua...'
+                : item.stock === 0
+                  ? 'Tạm hết'
+                  : item.currencyType === 'real'
+                    ? (item.localizedPrice || `$${(item.price / 100).toFixed(2)}`)
+                    : item.price}
             </Text>
           </TouchableOpacity>
         ) : (
@@ -116,19 +138,19 @@ export const ShopItemCard: React.FC<ShopItemCardProps> = ({ item, onPress, onBuy
   );
 };
 
-const styles = StyleSheet.create({
+const makeStyles = (COLORS: typeof DARK_COLORS, isDark: boolean) => StyleSheet.create({
   wrapper: {
     width: '48%',
     marginBottom: SPACING.md,
   },
   card: {
-    backgroundColor: COLORS.bgCard,
+    backgroundColor: COLORS.backgroundCard,
     borderRadius: BORDER_RADIUS.xl,
     borderWidth: 1,
     padding: SPACING.lg,
     alignItems: 'center',
     gap: SPACING.sm,
-    ...SHADOWS.small,
+    ...(isDark ? SHADOWS.small : {}),
     position: 'relative',
     overflow: 'hidden',
   },
@@ -136,13 +158,13 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: SPACING.sm,
     right: SPACING.sm,
-    backgroundColor: COLORS.success,
+    backgroundColor: COLORS.accentGreen,
     paddingHorizontal: SPACING.sm,
     paddingVertical: 2,
     borderRadius: BORDER_RADIUS.sm,
   },
   newText: {
-    color: COLORS.white,
+    color: '#FFFFFF',
     fontSize: FONT_SIZES.xs - 1,
     fontWeight: FONT_WEIGHTS.bold,
   },
@@ -150,13 +172,13 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: SPACING.sm,
     left: SPACING.sm,
-    backgroundColor: COLORS.danger,
+    backgroundColor: COLORS.accentRed,
     paddingHorizontal: SPACING.sm,
     paddingVertical: 2,
     borderRadius: BORDER_RADIUS.sm,
   },
   discountText: {
-    color: COLORS.white,
+    color: '#FFFFFF',
     fontSize: FONT_SIZES.xs - 1,
     fontWeight: FONT_WEIGHTS.bold,
   },
@@ -185,11 +207,14 @@ const styles = StyleSheet.create({
     borderRadius: BORDER_RADIUS.full,
     marginTop: SPACING.xs,
   },
+  buyButtonDisabled: {
+    opacity: 0.55,
+  },
   priceIcon: {
     fontSize: 14,
   },
   priceText: {
-    color: COLORS.textPrimary,
+    color: '#FFFFFF',
     fontSize: FONT_SIZES.md,
     fontWeight: FONT_WEIGHTS.bold,
   },
@@ -197,7 +222,7 @@ const styles = StyleSheet.create({
     marginTop: SPACING.xs,
   },
   ownedText: {
-    color: COLORS.success,
+    color: COLORS.accentGreen,
     fontSize: FONT_SIZES.sm,
     fontWeight: FONT_WEIGHTS.medium,
   },

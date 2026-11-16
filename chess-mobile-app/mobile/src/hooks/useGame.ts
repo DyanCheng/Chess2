@@ -3,7 +3,7 @@
 // ============================================================
 
 import { useCallback, useEffect, useRef } from 'react';
-import { useGameStore } from '../store/gameStore';
+import { getLocalMoveRules, useGameStore } from '../store/gameStore';
 import { usePlayerStore } from '../store/playerStore';
 import { useCardStore } from '../store/cardStore';
 import { GameMode, BotDifficulty } from '../types/game';
@@ -20,30 +20,73 @@ export function useGame() {
   const {
     gameId, mode, status, board, currentTurn, playerColor,
     moveHistory, selectedSquare, validMoves, lastMove, inCheck,
-    timer, whiteHP, blackHP, playerCards, activeEffects,
-    selectedCard, showGameOverModal, gameResult,
+    timer, whiteHP, blackHP, playerCards, drawPile, discardPile, activeEffects, previousBoard, cardUsedThisTurn,
+    selectedCard, targetingCard, showGameOverModal, gameResult,
     initGame, selectSquare, makeMove, selectCard, useCard,
-    updateTimer, resignGame, resetGame,
+    selectCardTarget,
+    updateTimer, agreeDraw, resignGame, resetGame,
   } = useGameStore();
 
   const { addGold, addExperience, addGems, recordWin, recordLoss, recordDraw } = usePlayerStore();
   const { getHandCards } = useCardStore();
+  const gameCards = playerCards.map(item => {
+    if (!item.isUsable || item.usesRemaining <= 0 || cardUsedThisTurn) {
+      return { ...item, isUsable: false };
+    }
+    const type = item.card.effectType;
+    const ownColor = playerColor;
+    const ownPieces = board.flat().filter(piece => piece?.color === ownColor);
+    const enemyPieces = board.flat().filter(piece => piece?.color !== ownColor && piece);
+    const emptySquares = board.flat().some(piece => !piece);
+    let usable = true;
+    if (type === 'start') usable = moveHistory.length === 0 && ownColor === 'white';
+    else if (type === 'matrix') {
+      usable = Array.from({ length: 8 }, (_, index) => board[7 - index][index])
+        .filter(Boolean).length >= 5;
+    } else if (type === 'bring_back') {
+      usable = moveHistory.some(move => move.captured?.color === ownColor) && emptySquares;
+    } else if (type === 'back_to_future') usable = !!previousBoard && moveHistory.length > 0;
+    else if (type === 'greed') usable = drawPile.length > 0 || discardPile.length > 0;
+    else if (type === 'arsenal_plus') {
+      usable = playerCards.some(card => card.card.effectType === 'arsenal' && card.usesRemaining > 0);
+    } else if (type === 'portal') {
+      usable = ownPieces.filter(piece => piece && piece.type !== 'king').length > 1;
+    } else if (type === 'freeze' || type === 'high_risk' || type === 'mosquito') {
+      usable = enemyPieces.length > 0;
+    } else if (type === 'fortune') usable = emptySquares && (ownColor === 'white' ? whiteHP.current : blackHP.current) > 1;
+    else if (type === 'tele') usable = emptySquares && ownPieces.length > 0;
+    else if (type === 'pawn_step') usable = ownPieces.some(piece => piece?.type === 'pawn');
+    else if (type === 'arsenal' || type === 'transformer') {
+      usable = ownPieces.some(piece => piece?.type !== 'king');
+    }
+    return { ...item, isUsable: usable };
+  });
+  const dealStartingHand = useCallback(() => {
+    const deck = getHandCards();
+    const unavailableInLocalBot = new Set(['block', 'nope', 'copy']);
+    const prepare = (card: (typeof deck)[number]) => ({
+      ...card,
+      isUsable: !unavailableInLocalBot.has(card.card.effectType),
+    });
+    useGameStore.setState({
+      playerCards: deck.slice(0, 5).map(prepare),
+      drawPile: deck.slice(5).map(prepare),
+    });
+  }, [getHandCards]);
 
   // Start a new PVP game
   const startPvPGame = useCallback(() => {
     initGame('pvp', 'white');
     // Set player cards
-    const hand = getHandCards();
-    useGameStore.setState({ playerCards: hand });
-  }, [initGame, getHandCards]);
+    dealStartingHand();
+  }, [initGame, dealStartingHand]);
 
   // Start a new PVE (bot) game
   const startBotGame = useCallback((botLevel: BotDifficulty) => {
     initGame('pve', 'white');
     useGameStore.setState({ botId: botLevel.id });
-    const hand = getHandCards();
-    useGameStore.setState({ playerCards: hand });
-  }, [initGame, getHandCards]);
+    dealStartingHand();
+  }, [initGame, dealStartingHand]);
 
   // Timer effect
   useEffect(() => {
@@ -108,7 +151,7 @@ export function useGame() {
         const state = useGameStore.getState();
         if (state.status !== 'playing' || state.currentTurn === state.playerColor) return;
         const botColor = playerColor === 'white' ? 'black' : 'white';
-        const allMoves = localBotMoves(botColor);
+        const allMoves = localBotMoves(botColor, getLocalMoveRules(state.activeEffects));
         if (allMoves.length > 0) {
           const randomMove = allMoves[Math.floor(Math.random() * allMoves.length)];
           useGameStore.getState().makeMove(randomMove.from, randomMove.to);
@@ -129,12 +172,12 @@ export function useGame() {
     // State
     gameId, mode, status, board, currentTurn, playerColor,
     moveHistory, selectedSquare, validMoves, lastMove, inCheck,
-    timer, whiteHP, blackHP, playerCards, activeEffects,
-    selectedCard, showGameOverModal, gameResult,
+    timer, whiteHP, blackHP, playerCards: gameCards, activeEffects,
+    selectedCard, targetingCard, showGameOverModal, gameResult,
 
     // Actions
     startPvPGame, startBotGame, selectSquare, makeMove,
-    selectCard, useCard, resignGame, resetGame,
+    selectCard, useCard, selectCardTarget, agreeDraw, resignGame, resetGame,
 
     // Computed
     isPlayerTurn: currentTurn === playerColor,

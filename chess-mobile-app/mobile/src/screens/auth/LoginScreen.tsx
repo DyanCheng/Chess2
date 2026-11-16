@@ -1,157 +1,730 @@
-import React, { useState } from 'react';
-import { View, Text, TextInput, StyleSheet, SafeAreaView, TouchableOpacity, Alert } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
-import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { COLORS, SPACING, BORDER_RADIUS, FONT_SIZES, FONT_WEIGHTS } from '../../constants/theme';
-import { GradientButton } from '../../components/common/GradientButton';
-
+import React, { useEffect, useMemo, useState } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import {
+  ActivityIndicator,
+  Alert,
+  Image,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
+  StatusBar,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { COLORS as DARK_COLORS, LIGHT_COLORS } from '../../constants/arcane-colors';
 import { useAuthStore } from '../../store/authStore';
+import { useArcaneThemeStore } from '../../store/arcaneThemeStore';
 
-export const LoginScreen = () => {
-  const navigation = useNavigation<NativeStackNavigationProp<any>>();
+type LoginPalette = {
+  background: string;
+  panel: string;
+  input: string;
+  border: string;
+  gold: string;
+  goldDark: string;
+  cyan: string;
+  cream: string;
+  muted: string;
+  white: string;
+  error: string;
+};
+
+const getLoginPalette = (isDark: boolean): LoginPalette => {
+  const palette = isDark ? DARK_COLORS : LIGHT_COLORS;
+  return {
+    background: palette.background,
+    panel: palette.backgroundCard,
+    input: isDark ? palette.backgroundDark : palette.surface,
+    border: palette.border,
+    gold: palette.primary,
+    goldDark: isDark ? '#8E5100' : '#713F12',
+    cyan: isDark ? palette.accent : palette.accentBlue,
+    cream: palette.textPrimary,
+    muted: palette.textMuted,
+    white: palette.textPrimary,
+    error: palette.accentRed,
+  };
+};
+
+const REMEMBERED_EMAIL_KEY = 'arcane_chess_remembered_email';
+
+type AuthTab = 'login' | 'register';
+export const LoginScreen: React.FC = () => {
+  const isDark = useArcaneThemeStore(state => state.isDark);
+  const toggleTheme = useArcaneThemeStore(state => state.toggleTheme);
+  const colors = useMemo(() => getLoginPalette(isDark), [isDark]);
+  const styles = useMemo(() => makeStyles(colors), [colors]);
+  const login = useAuthStore(state => state.login);
+  const register = useAuthStore(state => state.register);
+  const enterGuestMode = useAuthStore(state => state.enterGuestMode);
+  const isLoading = useAuthStore(state => state.isLoading);
+  const authError = useAuthStore(state => state.error);
+  const clearAuthError = useAuthStore(state => state.clearError);
+
+  const [activeTab, setActiveTab] = useState<AuthTab>('login');
+  const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [loading, setLoading] = useState(false);
-  const login = useAuthStore(state => state.login);
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [rememberEmail, setRememberEmail] = useState(true);
+  const [formError, setFormError] = useState<string | null>(null);
 
-  const handleLogin = async () => {
-    if (!email || !password) {
-      Alert.alert('Lỗi', 'Vui lòng nhập đầy đủ email và mật khẩu');
+  useEffect(() => {
+    let isMounted = true;
+
+    AsyncStorage.getItem(REMEMBERED_EMAIL_KEY)
+      .then(savedEmail => {
+        if (isMounted && savedEmail) setEmail(savedEmail);
+      })
+      .catch(() => {
+        if (isMounted) setFormError('Không thể tải email đã lưu trên thiết bị.');
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  const changeTab = (tab: AuthTab) => {
+    setActiveTab(tab);
+    setFormError(null);
+    clearAuthError();
+  };
+
+  const handleSubmit = async () => {
+    setFormError(null);
+    clearAuthError();
+
+    const trimmedEmail = email.trim();
+    if (!trimmedEmail || !password) {
+      setFormError('Vui lòng nhập email và mật khẩu.');
       return;
     }
+
+    if (activeTab === 'register') {
+      if (!username.trim()) {
+        setFormError('Vui lòng nhập tên hiển thị.');
+        return;
+      }
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
+        setFormError('Vui lòng nhập địa chỉ email hợp lệ.');
+        return;
+      }
+      if (password.length < 8) {
+        setFormError('Mật khẩu cần có ít nhất 8 ký tự.');
+        return;
+      }
+      if (password !== confirmPassword) {
+        setFormError('Mật khẩu xác nhận không khớp.');
+        return;
+      }
+
+      try {
+        await register(trimmedEmail, password, username.trim());
+      } catch (error) {
+        setFormError(error instanceof Error ? error.message : 'Đăng ký thất bại.');
+      }
+      return;
+    }
+
     try {
-      setLoading(true);
-      await login(email, password);
-      navigation.navigate('MainTabs', { screen: 'Profile' });
-    } catch (err: any) {
-      Alert.alert('Lỗi', err.message || 'Đăng nhập không thành công');
-    } finally {
-      setLoading(false);
+      await login(trimmedEmail, password);
+      try {
+        if (rememberEmail) {
+          await AsyncStorage.setItem(REMEMBERED_EMAIL_KEY, trimmedEmail);
+        } else {
+          await AsyncStorage.removeItem(REMEMBERED_EMAIL_KEY);
+        }
+      } catch {
+        Alert.alert(
+          'Đăng nhập thành công',
+          'Không thể lưu tùy chọn ghi nhớ email trên thiết bị này.',
+        );
+        return;
+      }
+    } catch (error) {
+      setFormError(error instanceof Error ? error.message : 'Đăng nhập thất bại.');
     }
   };
 
+  const handleForgotPassword = () => {
+    Alert.alert(
+      'Chưa hỗ trợ khôi phục mật khẩu',
+      'Máy chủ hiện chưa có chức năng gửi email đặt lại mật khẩu.',
+    );
+  };
+
+  const title = activeTab === 'login' ? 'VÀO BÀN CỜ' : 'TẠO TÀI KHOẢN';
+
   return (
     <SafeAreaView style={styles.safeArea}>
-      <View style={styles.container}>
-        <View style={styles.header}>
-          <Text style={styles.title}>Đăng Nhập</Text>
-          <Text style={styles.subtitle}>Chào mừng bạn quay lại với BTChess</Text>
+      <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} backgroundColor={colors.background} />
+      <View style={styles.topBar}>
+        <View style={styles.serverInfo}>
+          <View style={styles.statusDot} />
+          <Text style={styles.serverName}>ARCANE CHESS</Text>
         </View>
-
-        <View style={styles.form}>
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Email</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="Nhập email của bạn"
-              placeholderTextColor={COLORS.textMuted}
-              value={email}
-              onChangeText={setEmail}
-              keyboardType="email-address"
-              autoCapitalize="none"
-            />
-          </View>
-
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Mật khẩu</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="Nhập mật khẩu"
-              placeholderTextColor={COLORS.textMuted}
-              value={password}
-              onChangeText={setPassword}
-              secureTextEntry
-            />
-          </View>
-
-          <GradientButton 
-            title="Đăng Nhập" 
-            onPress={handleLogin} 
-            size="large" 
-            fullWidth 
-            style={styles.loginButton}
-          />
-
-          <View style={styles.footer}>
-            <Text style={styles.footerText}>Chưa có tài khoản? </Text>
-            <TouchableOpacity onPress={() => navigation.navigate('Register')}>
-              <Text style={styles.registerText}>Đăng ký ngay</Text>
-            </TouchableOpacity>
-          </View>
+        <View style={styles.topBarActions}>
+          <Text style={styles.serverLabel}>TACTICAL RPG</Text>
+          <TouchableOpacity
+            accessibilityRole="button"
+            accessibilityLabel={isDark ? 'Chuyển sang giao diện sáng' : 'Chuyển sang giao diện tối'}
+            onPress={toggleTheme}
+            style={styles.themeButton}
+          >
+            <Text style={styles.themeButtonText}>{isDark ? '☀' : '☾'}</Text>
+          </TouchableOpacity>
         </View>
       </View>
+
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        style={styles.keyboardArea}
+      >
+        <ScrollView
+          contentContainerStyle={styles.scrollContent}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
+          <View style={styles.branding}>
+            <View style={styles.logoFrame}>
+              <Image
+                source={require('../../assets/images/arcane-chess-logo.png')}
+                style={styles.logo}
+                accessibilityLabel="Biểu tượng Arcane Chess"
+              />
+            </View>
+            <Text style={styles.brandTitle}>ARCANE CHESS</Text>
+            <Text style={styles.tagline}>✦  TACTICAL RPG & STRATEGY  ✦</Text>
+          </View>
+
+          <View style={styles.tabs}>
+            <TouchableOpacity
+              accessibilityRole="tab"
+              accessibilityState={{ selected: activeTab === 'login' }}
+              style={[styles.tab, activeTab === 'login' && styles.activeTab]}
+              onPress={() => changeTab('login')}
+            >
+              <Text style={[styles.tabText, activeTab === 'login' && styles.activeTabText]}>
+                ⚔  Đăng Nhập
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              accessibilityRole="tab"
+              accessibilityState={{ selected: activeTab === 'register' }}
+              style={[styles.tab, activeTab === 'register' && styles.activeTab]}
+              onPress={() => changeTab('register')}
+            >
+              <Text style={[styles.tabText, activeTab === 'register' && styles.activeTabText]}>
+                ✥  Đăng Ký
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          <View style={styles.formCard}>
+            {activeTab === 'register' && (
+              <View style={styles.inputGroup}>
+                <View style={styles.labelRow}>
+                  <Text style={styles.fieldLabel}>TÊN HIỂN THỊ</Text>
+                  <Text style={styles.hint}>Tên trong game</Text>
+                </View>
+                <View style={styles.inputBox}>
+                  <Text style={styles.inputIcon}>♙</Text>
+                  <TextInput
+                    accessibilityLabel="Tên hiển thị"
+                    style={styles.textInput}
+                    value={username}
+                    onChangeText={setUsername}
+                    placeholder="Nhập tên của bạn"
+                    placeholderTextColor={colors.muted}
+                    autoCapitalize="words"
+                    returnKeyType="next"
+                  />
+                </View>
+              </View>
+            )}
+
+            <View style={styles.inputGroup}>
+              <View style={styles.labelRow}>
+                <Text style={styles.fieldLabel}>EMAIL TÀI KHOẢN</Text>
+                <Text style={styles.hint}>Cấp độ Hiệp Sĩ</Text>
+              </View>
+              <View style={styles.inputBox}>
+                <Text style={styles.inputIcon}>♙</Text>
+                <TextInput
+                  accessibilityLabel="Email tài khoản"
+                  style={styles.textInput}
+                  value={email}
+                  onChangeText={setEmail}
+                  placeholder="name@example.com"
+                  placeholderTextColor={colors.muted}
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  returnKeyType="next"
+                />
+              </View>
+            </View>
+
+            <View style={styles.inputGroup}>
+              <View style={styles.labelRow}>
+                <Text style={styles.fieldLabel}>MẬT KHẨU</Text>
+                <Text style={styles.hint}>Tối thiểu 8 ký tự</Text>
+              </View>
+              <View style={styles.inputBox}>
+                <Text style={styles.inputIcon}>♙</Text>
+                <TextInput
+                  accessibilityLabel="Mật khẩu"
+                  style={styles.textInput}
+                  value={password}
+                  onChangeText={setPassword}
+                  placeholder="Nhập mật khẩu"
+                  placeholderTextColor={colors.muted}
+                  secureTextEntry={!showPassword}
+                  autoCapitalize="none"
+                  returnKeyType={activeTab === 'register' ? 'next' : 'go'}
+                  onSubmitEditing={activeTab === 'login' ? handleSubmit : undefined}
+                />
+                <TouchableOpacity
+                  accessibilityRole="button"
+                  accessibilityLabel={showPassword ? 'Ẩn mật khẩu' : 'Hiện mật khẩu'}
+                  onPress={() => setShowPassword(value => !value)}
+                  hitSlop={8}
+                >
+                  <Text style={styles.visibilityIcon}>{showPassword ? '◉' : '◎'}</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            {activeTab === 'register' && (
+              <View style={styles.inputGroup}>
+                <View style={styles.labelRow}>
+                  <Text style={styles.fieldLabel}>XÁC NHẬN MẬT KHẨU</Text>
+                </View>
+                <View style={styles.inputBox}>
+                  <Text style={styles.inputIcon}>♙</Text>
+                  <TextInput
+                    accessibilityLabel="Xác nhận mật khẩu"
+                    style={styles.textInput}
+                    value={confirmPassword}
+                    onChangeText={setConfirmPassword}
+                    placeholder="Nhập lại mật khẩu"
+                    placeholderTextColor={colors.muted}
+                    secureTextEntry={!showPassword}
+                    autoCapitalize="none"
+                    returnKeyType="go"
+                    onSubmitEditing={handleSubmit}
+                  />
+                </View>
+              </View>
+            )}
+
+            {activeTab === 'login' ? (
+              <View style={styles.actionRow}>
+                <TouchableOpacity
+                  accessibilityRole="checkbox"
+                  accessibilityState={{ checked: rememberEmail }}
+                  style={styles.rememberButton}
+                  onPress={() => setRememberEmail(value => !value)}
+                >
+                  <View style={[styles.checkbox, rememberEmail && styles.checkedBox]}>
+                    {rememberEmail && <Text style={styles.checkmark}>✓</Text>}
+                  </View>
+                  <Text style={styles.rememberText}>Ghi nhớ email</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={handleForgotPassword}>
+                  <Text style={styles.forgotText}>Quên mật khẩu?</Text>
+                </TouchableOpacity>
+              </View>
+            ) : null}
+
+            {(formError || authError) && (
+              <Text accessibilityRole="alert" style={styles.errorText}>
+                {formError || authError}
+              </Text>
+            )}
+
+            <TouchableOpacity
+              accessibilityRole="button"
+              disabled={isLoading}
+              style={[styles.submitButton, isLoading && styles.submitButtonDisabled]}
+              onPress={handleSubmit}
+            >
+              {isLoading ? (
+                <ActivityIndicator color={colors.goldDark} />
+              ) : (
+                <Text style={styles.submitButtonText}>
+                  ⚔  {activeTab === 'login' ? title : 'TẠO TÀI KHOẢN'}
+                </Text>
+              )}
+            </TouchableOpacity>
+          </View>
+
+          <View style={styles.dividerRow}>
+            <View style={styles.dividerLine} />
+            <Text style={styles.dividerText}>◆  HOẶC TIẾP TỤC VỚI  ◆</Text>
+            <View style={styles.dividerLine} />
+          </View>
+
+          <View style={styles.providerRow} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
+            <View style={styles.providerTile}><Text style={styles.googleIcon}>G</Text></View>
+            <View style={styles.providerTile}><Text style={styles.appleIcon}>●</Text></View>
+            <View style={styles.providerTile}><Text style={styles.facebookIcon}>f</Text></View>
+            <View style={styles.providerTile}><Text style={styles.chessIcon}>♜</Text></View>
+          </View>
+          <Text style={styles.providerNote}>Đăng nhập bên thứ ba sẽ sớm ra mắt</Text>
+
+          <TouchableOpacity style={styles.guestButton} onPress={enterGuestMode}>
+            <Text style={styles.guestText}>Chơi ngay không cần tài khoản (Khách)  →</Text>
+          </TouchableOpacity>
+          <Text style={styles.guestNote}>
+            Tiến trình chơi khách được lưu tạm thời trên thiết bị này.
+          </Text>
+
+          <View style={styles.footer}>
+            <Text style={styles.securityText}>◇  KẾT NỐI ĐƯỢC BẢO VỆ BỞI ARCANE</Text>
+            <Text style={styles.versionText}>Arcane Chess  •  Grandmaster Network</Text>
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 };
 
-const styles = StyleSheet.create({
+export default LoginScreen;
+
+const makeStyles = (COLORS: LoginPalette) => StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: COLORS.bgDark,
+    backgroundColor: COLORS.background,
   },
-  container: {
-    flex: 1,
-    padding: SPACING.xl,
-    justifyContent: 'center',
-  },
-  header: {
-    marginBottom: SPACING.xxl,
+  topBar: {
+    minHeight: 44,
+    paddingHorizontal: 18,
+    flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
   },
-  title: {
-    fontSize: 32,
-    fontWeight: FONT_WEIGHTS.extrabold,
-    color: COLORS.textPrimary,
-    marginBottom: SPACING.sm,
+  topBarActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
   },
-  subtitle: {
-    fontSize: FONT_SIZES.md,
-    color: COLORS.textSecondary,
+  themeButton: {
+    width: 34,
+    height: 34,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 17,
+    backgroundColor: COLORS.panel,
+    borderWidth: 1,
+    borderColor: COLORS.border,
   },
-  form: {
+  themeButtonText: {
+    color: COLORS.gold,
+    fontSize: 20,
+    fontWeight: '700',
+  },
+  serverInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  statusDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: COLORS.cyan,
+  },
+  serverName: {
+    color: COLORS.cyan,
+    fontSize: 12,
+    fontWeight: '800',
+    letterSpacing: 1.4,
+  },
+  serverLabel: {
+    color: COLORS.cream,
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 1,
+  },
+  keyboardArea: {
+    flex: 1,
+  },
+  scrollContent: {
+    flexGrow: 1,
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingBottom: 24,
+  },
+  branding: {
+    alignItems: 'center',
+    marginTop: 12,
+    marginBottom: 22,
+  },
+  logoFrame: {
+    width: 126,
+    height: 126,
+    borderRadius: 24,
+    padding: 6,
+    backgroundColor: COLORS.panel,
+    marginBottom: 14,
+  },
+  logo: {
     width: '100%',
+    height: '100%',
+    borderRadius: 19,
+  },
+  brandTitle: {
+    color: COLORS.gold,
+    fontSize: 29,
+    fontWeight: '900',
+    letterSpacing: 1.7,
+    textShadowColor: COLORS.gold + '4D',
+    textShadowOffset: { width: 0, height: 2 },
+    textShadowRadius: 12,
+  },
+  tagline: {
+    color: COLORS.cyan,
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 1.2,
+    marginTop: 5,
+  },
+  tabs: {
+    width: '100%',
+    flexDirection: 'row',
+    padding: 4,
+    borderRadius: 16,
+    backgroundColor: COLORS.input,
+    marginBottom: 16,
+  },
+  tab: {
+    minHeight: 48,
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderRadius: 12,
+  },
+  activeTab: {
+    backgroundColor: COLORS.gold,
+  },
+  tabText: {
+    color: COLORS.cream,
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  activeTabText: {
+    color: COLORS.goldDark,
+  },
+  formCard: {
+    width: '100%',
+    borderRadius: 20,
+    padding: 18,
+    backgroundColor: COLORS.panel,
+    borderWidth: 1,
+    borderColor: COLORS.border,
   },
   inputGroup: {
-    marginBottom: SPACING.lg,
+    marginBottom: 15,
   },
-  label: {
-    color: COLORS.textPrimary,
-    marginBottom: SPACING.xs,
-    fontSize: FONT_SIZES.sm,
-    fontWeight: FONT_WEIGHTS.bold,
-  },
-  input: {
-    backgroundColor: COLORS.surface,
-    borderWidth: 1,
-    borderColor: COLORS.surfaceBorder,
-    borderRadius: BORDER_RADIUS.md,
-    padding: SPACING.md,
-    color: COLORS.textPrimary,
-    fontSize: FONT_SIZES.md,
-  },
-  forgotPassword: {
-    alignSelf: 'flex-end',
-    marginBottom: SPACING.xl,
-  },
-  forgotPasswordText: {
-    color: COLORS.primary,
-    fontSize: FONT_SIZES.sm,
-  },
-  loginButton: {
-    marginBottom: SPACING.xl,
-  },
-  footer: {
+  labelRow: {
     flexDirection: 'row',
-    justifyContent: 'center',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 7,
+  },
+  fieldLabel: {
+    color: COLORS.cream,
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.45,
+  },
+  hint: {
+    color: COLORS.cyan,
+    fontSize: 10,
+  },
+  inputBox: {
+    height: 50,
+    borderRadius: 12,
+    paddingHorizontal: 13,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.input,
+  },
+  inputIcon: {
+    width: 24,
+    color: COLORS.gold,
+    fontSize: 19,
+    fontWeight: '700',
+  },
+  textInput: {
+    flex: 1,
+    height: '100%',
+    color: COLORS.white,
+    fontSize: 14,
+    paddingVertical: 0,
+  },
+  visibilityIcon: {
+    color: COLORS.cream,
+    fontSize: 21,
+    paddingHorizontal: 4,
+  },
+  actionRow: {
+    minHeight: 38,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: -1,
+    marginBottom: 15,
+  },
+  rememberButton: {
+    flexDirection: 'row',
     alignItems: 'center',
   },
-  footerText: {
-    color: COLORS.textSecondary,
-    fontSize: FONT_SIZES.md,
+  checkbox: {
+    width: 20,
+    height: 20,
+    borderWidth: 1,
+    borderColor: COLORS.gold,
+    borderRadius: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 7,
   },
-  registerText: {
-    color: COLORS.primary,
-    fontSize: FONT_SIZES.md,
-    fontWeight: FONT_WEIGHTS.bold,
+  checkedBox: {
+    backgroundColor: COLORS.gold,
+  },
+  checkmark: {
+    color: COLORS.goldDark,
+    fontSize: 14,
+    fontWeight: '900',
+    lineHeight: 18,
+  },
+  rememberText: {
+    color: COLORS.cream,
+    fontSize: 12,
+  },
+  forgotText: {
+    color: COLORS.cyan,
+    fontSize: 12,
+    textDecorationLine: 'underline',
+  },
+  errorText: {
+    color: COLORS.error,
+    fontSize: 12,
+    lineHeight: 18,
+    marginBottom: 12,
+  },
+  submitButton: {
+    minHeight: 54,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: COLORS.gold,
+  },
+  submitButtonDisabled: {
+    opacity: 0.7,
+  },
+  submitButtonText: {
+    color: COLORS.goldDark,
+    fontSize: 18,
+    fontWeight: '900',
+    letterSpacing: 0.8,
+  },
+  dividerRow: {
+    width: '100%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginTop: 22,
+    marginBottom: 18,
+  },
+  dividerLine: {
+    height: 1,
+    flex: 1,
+    backgroundColor: COLORS.border,
+  },
+  dividerText: {
+    color: COLORS.cream,
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 0.8,
+  },
+  providerRow: {
+    width: '100%',
+    flexDirection: 'row',
+    gap: 10,
+  },
+  providerTile: {
+    height: 52,
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 14,
+    backgroundColor: COLORS.panel,
+  },
+  googleIcon: {
+    color: COLORS.white,
+    fontSize: 27,
+    fontWeight: '700',
+  },
+  appleIcon: {
+    color: COLORS.white,
+    fontSize: 22,
+  },
+  facebookIcon: {
+    color: COLORS.white,
+    fontSize: 30,
+    fontWeight: '900',
+  },
+  chessIcon: {
+    color: COLORS.cyan,
+    fontSize: 28,
+  },
+  providerNote: {
+    color: COLORS.muted,
+    fontSize: 10,
+    marginTop: 6,
+  },
+  guestButton: {
+    marginTop: 21,
+    paddingVertical: 4,
+  },
+  guestText: {
+    color: COLORS.cream,
+    fontSize: 14,
+    textAlign: 'center',
+    textDecorationLine: 'underline',
+    textDecorationColor: COLORS.cyan,
+  },
+  guestNote: {
+    maxWidth: 340,
+    color: COLORS.muted,
+    fontSize: 11,
+    textAlign: 'center',
+    lineHeight: 16,
+    marginTop: 4,
+  },
+  footer: {
+    alignItems: 'center',
+    marginTop: 32,
+    gap: 6,
+  },
+  securityText: {
+    color: COLORS.cream,
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 0.7,
+  },
+  versionText: {
+    color: COLORS.muted,
+    fontSize: 11,
+    fontWeight: '700',
   },
 });

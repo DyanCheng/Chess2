@@ -4,6 +4,12 @@ import { getServerSocket } from '../services/websocket/serverSocket';
 import { useAuthStore } from '../store/authStore';
 import { MatchmakingStatus } from '../types/game';
 
+export interface MatchmakingOptions {
+  queueType: 'RANKED' | 'CASUAL';
+  timeControlId: string;
+  gameModeCode?: string;
+}
+
 export interface FoundMatch {
   gameId: string;
   color: 'w' | 'b';
@@ -11,7 +17,7 @@ export interface FoundMatch {
   playerId: string;
 }
 
-export function useMatchmaking() {
+export function useMatchmaking(options: MatchmakingOptions) {
   const [matchStatus, setMatchStatus] = useState<MatchmakingStatus>({
     status: 'cancelled', estimatedWait: 0, playersOnline: 0,
   });
@@ -22,13 +28,22 @@ export function useMatchmaking() {
   const playerRef = useRef<string | null>(null);
   const activeRef = useRef(false);
   const matchedRef = useRef(false);
+  const foundHandlerRef = useRef<((found: Omit<FoundMatch, 'playerId'>) => void) | null>(null);
+  const errorHandlerRef = useRef<((reason: { message?: string }) => void) | null>(null);
 
   const cancelSearch = useCallback(() => {
     activeRef.current = false;
     if (!matchedRef.current && socketRef.current && playerRef.current) {
       socketRef.current.emit('matchmaking:leave');
     }
-    socketRef.current?.off('matchmaking:found');
+    if (foundHandlerRef.current) {
+      socketRef.current?.off('matchmaking:found', foundHandlerRef.current);
+      foundHandlerRef.current = null;
+    }
+    if (errorHandlerRef.current) {
+      socketRef.current?.off('exception', errorHandlerRef.current);
+      errorHandlerRef.current = null;
+    }
     if (!matchedRef.current) {
       setMatchStatus({ status: 'cancelled', estimatedWait: 0, playersOnline: 0 });
     }
@@ -49,20 +64,41 @@ export function useMatchmaking() {
       if (!activeRef.current) return;
       socketRef.current = socket;
       playerRef.current = playerId;
-      socket.on('matchmaking:found', (found: Omit<FoundMatch, 'playerId'>) => {
+      const handleFound = (found: Omit<FoundMatch, 'playerId'>) => {
         if (!activeRef.current) return;
         matchedRef.current = true;
         setMatch({ ...found, playerId });
         setMatchStatus({ status: 'found', estimatedWait: 0, playersOnline: 0, gameId: found.gameId });
+        if (errorHandlerRef.current) socket.off('exception', errorHandlerRef.current);
+        errorHandlerRef.current = null;
+      };
+      const handleError = (reason: { message?: string }) => {
+        if (!activeRef.current) return;
+        activeRef.current = false;
+        setError(reason?.message || 'Không thể tìm trận');
+        setMatchStatus({ status: 'cancelled', estimatedWait: 0, playersOnline: 0 });
+        if (foundHandlerRef.current) socket.off('matchmaking:found', foundHandlerRef.current);
+        socket.off('exception', handleError);
+        foundHandlerRef.current = null;
+        errorHandlerRef.current = null;
+      };
+      if (foundHandlerRef.current) socket.off('matchmaking:found', foundHandlerRef.current);
+      if (errorHandlerRef.current) socket.off('exception', errorHandlerRef.current);
+      foundHandlerRef.current = handleFound;
+      errorHandlerRef.current = handleError;
+      socket.on('matchmaking:found', handleFound);
+      socket.on('exception', handleError);
+      socket.emit('matchmaking:join', {
+        ...options,
+        gameModeCode: options.gameModeCode ?? 'STANDARD',
       });
-      socket.emit('matchmaking:join', { rating: 1000 });
     } catch (reason) {
       if (!activeRef.current) return;
       activeRef.current = false;
       setError(reason instanceof Error ? reason.message : 'Không thể tìm trận');
       setMatchStatus({ status: 'cancelled', estimatedWait: 0, playersOnline: 0 });
     }
-  }, []);
+  }, [options.gameModeCode, options.queueType, options.timeControlId]);
 
   useEffect(() => {
     if (matchStatus.status !== 'searching') return;
