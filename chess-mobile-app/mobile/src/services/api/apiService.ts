@@ -3,6 +3,7 @@
 // ============================================================
 
 import { serverConfig } from '../serverConfig';
+import { LeaderboardEntry } from '../../types/player';
 
 interface ApiResponse<T> {
   data: T | null;
@@ -14,7 +15,80 @@ export interface AuthSessionResponse {
   user: { id: string; email: string; username: string };
   accessToken: string | null;
   refreshToken: string | null;
-  emailConfirmationRequired?: boolean;
+}
+
+export interface PlayerProfileResponse {
+  id: string;
+  email: string;
+  username: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface GameModeDefinition {
+  id: string;
+  code: string;
+  name: string;
+  description: string | null;
+  rules: Record<string, unknown> | null;
+  sortOrder: number;
+  demoPreview: {
+    displayName: string;
+    avatarUrl: string | null;
+    rankPoints: number;
+    tierCode: string;
+    tierName: string;
+    wins: number;
+    losses: number;
+    draws: number;
+  } | null;
+}
+
+export interface RankScreenData {
+  season: {
+    id: string;
+    name: string;
+    startAt: string;
+    endAt: string;
+  };
+  rank: {
+    id: string;
+    rankPoints: number;
+    wins: number;
+    losses: number;
+    draws: number;
+    updatedAt: string;
+    tier: {
+      id: string;
+      code: string;
+      name: string;
+      minPoints: number;
+      order: number;
+    };
+  };
+  history: Array<{
+    id: string;
+    matchId: string | null;
+    pointsBefore: number;
+    pointsChange: number;
+    pointsAfter: number;
+    createdAt: string;
+  }>;
+}
+
+export interface PuzzleProgressResponse {
+  today: string;
+  dailyPuzzleId: string;
+  completedPuzzleIds: string[];
+  unlockedPuzzleId: string | null;
+  currentStreak: number;
+  bestStreak: number;
+  lastDailySolvedOn: string | null;
+}
+
+export interface ModeCatalogResponse {
+  modes: GameModeDefinition[];
+  season: RankScreenData['season'] | null;
 }
 
 export interface IapProductDefinition {
@@ -32,6 +106,66 @@ export interface WalletResponse {
 export interface IapSyncResponse {
   creditedPurchases: number;
   wallet: WalletResponse;
+}
+
+export interface ShopCatalogItem {
+  id: string;
+  name: string;
+  description: string;
+  itemType: 'CARD' | 'SKIN' | 'CURRENCY_PACK';
+  referenceId: string | null;
+  price: number;
+  currencyType: 'GOLD' | 'GEM';
+  stock: number | null;
+  isActive: boolean;
+  ownedQuantity: number;
+  isOwned: boolean;
+  canPurchaseMultiple: boolean;
+  rewardCurrency: number;
+  rewardGems: number;
+  card: {
+    id: string;
+    name: string;
+    description: string | null;
+    effectType: string;
+    value: number;
+  } | null;
+}
+
+export interface ShopPurchaseResponse {
+  purchase: {
+    id: string;
+    itemId: string;
+    itemName: string;
+    itemType: ShopCatalogItem['itemType'];
+    referenceId: string | null;
+    quantity: number;
+    totalPrice: number;
+    currencyType: ShopCatalogItem['currencyType'];
+    replayed: boolean;
+  };
+  wallet: {
+    gold: number;
+    gems: number;
+  };
+  inventory: {
+    itemId: string;
+    ownedQuantity: number;
+    cardId: string | null;
+    cardQuantity: number;
+    card: {
+      id: string;
+      name: string;
+      description: string;
+      effectType: string;
+      value: number;
+      quantity: number;
+    } | null;
+  };
+  rewards: {
+    gold: number;
+    gems: number;
+  };
 }
 
 class ApiService {
@@ -92,7 +226,7 @@ class ApiService {
 
   // Player endpoints
   async getProfile() {
-    return this.request('GET', '/player/profile');
+    return this.request<PlayerProfileResponse>('GET', '/player/profile');
   }
 
   async updateProfile(data: any) {
@@ -104,7 +238,27 @@ class ApiService {
   }
 
   async getLeaderboard(limit: number = 50) {
-    return this.request('GET', `/player/leaderboard?limit=${limit}`);
+    return this.request<LeaderboardEntry[]>('GET', `/player/leaderboard?limit=${limit}`);
+  }
+
+  async getActiveModes() {
+    return this.request<ModeCatalogResponse>('GET', '/modes');
+  }
+
+  async getMyRank() {
+    return this.request<RankScreenData>('GET', '/rank/me');
+  }
+
+  async getPuzzleProgress() {
+    return this.request<PuzzleProgressResponse>('GET', '/puzzles/progress');
+  }
+
+  async completePuzzle(puzzleId: string, solutionUci: string, dailyChallenge: boolean) {
+    return this.request<PuzzleProgressResponse>('POST', '/puzzles/complete', {
+      puzzleId,
+      solutionUci,
+      dailyChallenge,
+    });
   }
 
   // Game endpoints. New PvP games are created by the authenticated
@@ -122,11 +276,15 @@ class ApiService {
 
   // Shop endpoints
   async getShopItems() {
-    return this.request('GET', '/shop/items');
+    return this.request<{ items: ShopCatalogItem[] }>('GET', '/shop/items');
   }
 
-  async purchaseItem(itemId: string) {
-    return this.request('POST', '/shop/purchase', { itemId });
+  async purchaseItem(itemId: string, quantity: number, idempotencyKey: string) {
+    return this.request<ShopPurchaseResponse>('POST', '/shop/purchase', {
+      item_id: itemId,
+      quantity,
+      idempotency_key: idempotencyKey,
+    });
   }
 
   async getIapProducts() {

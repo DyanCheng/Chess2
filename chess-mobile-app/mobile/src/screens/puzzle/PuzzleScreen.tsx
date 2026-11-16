@@ -1,7 +1,21 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, StatusBar } from 'react-native';
+import React, { useEffect, useMemo, useState } from 'react';
+import { ActivityIndicator, AppState, View, Text, StyleSheet, ScrollView, TouchableOpacity, StatusBar, Modal, Pressable } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { COLORS, LIGHT_COLORS } from '../../constants/arcane-colors';
 import { SPACING, FONT_SIZE, FONT_WEIGHT, BORDER_RADIUS, SHADOW } from '../../constants/arcane-theme';
+import { useArcaneThemeStore } from '../../store/arcaneThemeStore';
+import { ChessBoard } from '../../components/chess/ChessBoard';
+import { BoardPosition } from '../../types/chess';
+import { apiService, PuzzleProgressResponse } from '../../services/api/apiService';
+import {
+  getDailyPuzzleBoard,
+  getDailyPuzzleLegalMoves,
+  getPuzzleById,
+  playDailyPuzzleMove,
+  TACTICAL_PUZZLES,
+  TacticalPuzzle,
+} from '../../services/game/dailyPuzzle';
+import { useAuthStore } from '../../store/authStore';
 
 // ============================================================
 // THEME (Dark / Light) - same pattern as Home & Modes screens
@@ -12,39 +26,17 @@ const ThemeContext = React.createContext<{
   toggle: () => void;
   colors: Palette;
   styles: ReturnType<typeof makeStyles>;
-  onNavigate?: (id: string) => void;
 } | null>(null);
 const useTheme = () => React.useContext(ThemeContext)!;
 
 // ============================================================
 // DATA
 // ============================================================
-const DAYS = [
-  { id: 'T2', state: 'done' },
-  { id: 'T3', state: 'done' },
-  { id: 'T4', state: 'done' },
-  { id: 'T5', state: 'done' },
-  { id: 'T6', state: 'done' },
-  { id: 'T7', state: 'today' },
-  { id: 'CN', state: 'locked' },
-];
-
-const TABS = [
-  { id: 'home', label: 'Trang chủ', icon: '🛡️' },
-  { id: 'modes', label: 'Chế độ', icon: '⚔️' },
-  { id: 'puzzle', label: 'Giải đố', icon: '🧩' },
-  { id: 'ranking', label: 'Xếp hạng', icon: '🏅' },
-  { id: 'shop', label: 'Cửa hàng', icon: '🛒' },
-];
-
 const LEADERS = [
   { rank: 1, name: 'GrandMaster_Zen', sub: 'Bậc Thầy Bơm Phối Hợp', score: 52, crown: true },
   { rank: 2, name: 'QueenGambit99', sub: 'Chiến Binh Tia Chớp', score: 48 },
   { rank: 3, name: 'ShadowKnight', sub: 'Sát Thủ Tàn Cuộc', score: 46 },
 ];
-
-// Mini board: pieces by square index for a decorative position
-const BOARD_PIECES: Record<number, string> = { 5: '♜', 6: '♛', 12: '♟', 27: '♞', 51: '♙', 60: '♔' };
 
 // ============================================================
 // HEADER & TITLE
@@ -120,31 +112,20 @@ const StatCards = () => {
 // ============================================================
 // STREAK
 // ============================================================
-const StreakCard = () => {
-  const { styles } = useTheme();
+const StreakCard = ({ progress }: { progress: PuzzleProgressResponse }) => {
+  const { styles, colors } = useTheme();
+  const todaySolved = progress.lastDailySolvedOn === progress.today;
   return (
     <View style={styles.card}>
       <View style={styles.cardHeadRow}>
-        <Text style={styles.streakTitle}>🔥 CHUỖI 12 NGÀY TRẢ LỜI THẤP LỬA</Text>
-        <Text style={styles.streakNote}>Hôm nay: <Text style={{ color: styles.accentText.color }}>Đã nhận</Text></Text>
+        <Text style={styles.streakTitle}>🔥 CHUỖI {progress.currentStreak} NGÀY GIẢI ĐỐ</Text>
+        <Text style={styles.streakNote}>
+          Hôm nay: {todaySolved ? 'Đã giải' : 'Chưa giải'}
+        </Text>
       </View>
-      <View style={styles.daysRow}>
-        {DAYS.map(d => (
-          <View key={d.id} style={styles.dayItem}>
-            <View
-              style={[
-                styles.dayCircle,
-                d.state === 'done' && styles.dayDone,
-                d.state === 'today' && styles.dayToday,
-              ]}
-            >
-              <Text style={[styles.dayIcon, d.state === 'done' && { color: '#1A1205' }]}>
-                {d.state === 'locked' ? '🔒' : d.state === 'today' ? '🎁' : '✓'}
-              </Text>
-            </View>
-            <Text style={[styles.dayLabel, d.state === 'today' && { color: styles.accentText.color }]}>{d.id}</Text>
-          </View>
-        ))}
+      <View style={styles.streakStats}>
+        <Text style={styles.streakStatText}>Kỷ lục cao nhất</Text>
+        <Text style={[styles.streakRecord, { color: colors.accent }]}>{progress.bestStreak} ngày</Text>
       </View>
     </View>
   );
@@ -153,31 +134,50 @@ const StreakCard = () => {
 // ============================================================
 // DAILY PUZZLE
 // ============================================================
-const DailyPuzzle = () => {
+const formatDate = (dateKey: string) => {
+  const [year, month, day] = dateKey.split('-');
+  return `${day}/${month}/${year}`;
+};
+
+const DailyPuzzle = ({ puzzle, date, isSolved, onStart }: {
+  puzzle: TacticalPuzzle;
+  date: string;
+  isSolved: boolean;
+  onStart: () => void;
+}) => {
   const { styles } = useTheme();
+  const [boardWidth, setBoardWidth] = useState(0);
+  const board = useMemo(() => getDailyPuzzleBoard(puzzle.fen), [puzzle.fen]);
+
   return (
     <View style={styles.card}>
       <View style={styles.cardHeadRow}>
-        <Text style={styles.dailyTitle}>♟ THẾ CỜ NGÀY #342</Text>
-        <View style={styles.legendTag}><Text style={styles.legendTagText}>HUYỀN THOẠI (MASTER)</Text></View>
+        <Text style={styles.dailyTitle}>♟ THẾ CỜ NGÀY · {formatDate(date)}</Text>
+        <View style={styles.legendTag}><Text style={styles.legendTagText}>{puzzle.difficulty.toUpperCase()}</Text></View>
       </View>
 
       <View style={styles.boardWrap}>
-        <View style={styles.board}>
-          {Array.from({ length: 64 }).map((_, i) => {
-            const dark = (Math.floor(i / 8) + (i % 8)) % 2 === 1;
-            return (
-              <View key={i} style={[styles.square, dark ? styles.squareDark : styles.squareLight]}>
-                {BOARD_PIECES[i] ? <Text style={styles.piece}>{BOARD_PIECES[i]}</Text> : null}
-              </View>
-            );
-          })}
+        <View
+          style={styles.board}
+          onLayout={event => setBoardWidth(event.nativeEvent.layout.width)}
+        >
+          {boardWidth > 0 && (
+            <ChessBoard
+              board={board}
+              selectedSquare={null}
+              validMoves={[]}
+              lastMove={null}
+              onSquarePress={() => undefined}
+              isInteractive={false}
+              maxBoardWidth={boardWidth}
+            />
+          )}
         </View>
       </View>
 
-      <Text style={styles.turnText}>TRẮNG ĐI TRƯỚC - THẮNG TRONG 3 NƯỚC</Text>
+      <Text style={styles.turnText}>{puzzle.theme.toUpperCase()}</Text>
       <Text style={styles.dailyDesc}>
-        Khóc thức trứ tuyệt kỹ bằng đòn Thí Hậu Arcane để phá vỡ thế phòng thủ của Vua Đen.
+        {puzzle.prompt}
       </Text>
 
       <View style={styles.rewardRow}>
@@ -186,10 +186,236 @@ const DailyPuzzle = () => {
         <View style={styles.rewardChip}><Text style={styles.rewardText}>↗ +15 ELO</Text></View>
       </View>
 
-      <TouchableOpacity style={styles.startBtn} activeOpacity={0.85}>
-        <Text style={styles.startText}>▶  BẮT ĐẦU GIẢI CỜ <Text style={styles.startSub}>(~2 phút)</Text></Text>
+      <TouchableOpacity
+        accessibilityRole="button"
+        style={styles.startBtn}
+        activeOpacity={0.85}
+        onPress={onStart}
+      >
+        <Text style={styles.startText}>
+          {isSolved ? '✓  BÀI HÔM NAY ĐÃ GIẢI' : '▶  BẮT ĐẦU GIẢI CỜ'}
+          {!isSolved && <Text style={styles.startSub}> (~2 phút)</Text>}
+        </Text>
       </TouchableOpacity>
     </View>
+  );
+};
+
+const PuzzleGameModal = ({
+  visible,
+  puzzle,
+  dailyDate,
+  puzzleIndex,
+  saveError,
+  onClose,
+  onSolved,
+  onNext,
+}: {
+  visible: boolean;
+  puzzle: TacticalPuzzle;
+  dailyDate: string | null;
+  puzzleIndex: number;
+  saveError: string | null;
+  onClose: () => void;
+  onSolved: (puzzleId: string, solutionUci: string, isDaily: boolean) => Promise<boolean>;
+  onNext: () => void;
+}) => {
+  const { styles, colors, isDark } = useTheme();
+  const insets = useSafeAreaInsets();
+  const [fen, setFen] = useState(puzzle.fen);
+  const [selectedSquare, setSelectedSquare] = useState<BoardPosition | null>(null);
+  const [lastMove, setLastMove] = useState<{ from: BoardPosition; to: BoardPosition } | null>(null);
+  const [boardWidth, setBoardWidth] = useState(0);
+  const [isSolved, setIsSolved] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [pendingSolution, setPendingSolution] = useState<string | null>(null);
+  const [feedback, setFeedback] = useState('Chọn một quân trắng để xem các nước đi hợp lệ.');
+  const board = useMemo(() => getDailyPuzzleBoard(fen), [fen]);
+  const validMoves = useMemo(
+    () => selectedSquare ? getDailyPuzzleLegalMoves(fen, selectedSquare) : [],
+    [fen, selectedSquare],
+  );
+
+  useEffect(() => {
+    if (!visible) return;
+    setFen(puzzle.fen);
+    setSelectedSquare(null);
+    setLastMove(null);
+    setIsSolved(false);
+    setIsSaving(false);
+    setPendingSolution(null);
+    setFeedback('Chọn một quân trắng để xem các nước đi hợp lệ.');
+  }, [puzzle.id, puzzle.fen, visible]);
+
+  const saveSolution = async (solutionUci: string) => {
+    setIsSaving(true);
+    const saved = await onSolved(puzzle.id, solutionUci, Boolean(dailyDate));
+    setIsSaving(false);
+    if (!saved) {
+      setFeedback('Đã giải đúng nhưng chưa lưu được. Hãy thử lưu lại.');
+      return;
+    }
+    setIsSolved(true);
+    setPendingSolution(null);
+    setFeedback('Chính xác! Tiến độ đã được lưu vào tài khoản.');
+  };
+
+  const handleSquarePress = (position: BoardPosition) => {
+    if (isSolved || isSaving || pendingSolution) return;
+
+    const isLegalDestination = validMoves.some(
+      move => move.row === position.row && move.col === position.col,
+    );
+    if (selectedSquare && isLegalDestination) {
+      const move = playDailyPuzzleMove(fen, selectedSquare, position);
+      setSelectedSquare(null);
+      if (!move || move.uci !== puzzle.solution || !move.isCheckmate) {
+        setFeedback('Nước đi hợp lệ, nhưng chưa phải lời giải. Hãy thử lại.');
+        return;
+      }
+
+      setFen(move.fen);
+      setLastMove({ from: selectedSquare, to: position });
+      setPendingSolution(move.uci);
+      setFeedback('Chính xác! Đang lưu tiến độ...');
+      void saveSolution(move.uci);
+      return;
+    }
+
+    if (board[position.row]?.[position.col]?.color === 'white') {
+      setSelectedSquare(position);
+      setFeedback('Chọn ô được đánh dấu để đi quân.');
+      return;
+    }
+
+    setFeedback(selectedSquare
+      ? 'Ô này không phải nước đi hợp lệ. Chọn một ô được đánh dấu.'
+      : 'Hãy chọn một quân trắng.');
+  };
+
+  const resetPuzzle = () => {
+    setFen(puzzle.fen);
+    setSelectedSquare(null);
+    setLastMove(null);
+    setIsSolved(false);
+    setPendingSolution(null);
+    setIsSaving(false);
+    setFeedback('Chọn một quân trắng để xem các nước đi hợp lệ.');
+  };
+
+  return (
+    <Modal
+      visible={visible}
+      animationType="slide"
+      presentationStyle="fullScreen"
+      onRequestClose={onClose}
+    >
+      <View
+        style={[
+          styles.puzzleGameScreen,
+          { paddingTop: insets.top + SPACING.md, paddingBottom: insets.bottom + SPACING.md },
+        ]}
+      >
+        <StatusBar
+          barStyle={isDark ? 'light-content' : 'dark-content'}
+          backgroundColor={colors.background}
+        />
+        <View style={styles.puzzleGameHeader}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Quay lại trang giải đố"
+            onPress={onClose}
+            style={styles.puzzleGameIconButton}
+          >
+            <Text style={styles.puzzleGameIcon}>‹</Text>
+          </Pressable>
+          <View style={styles.puzzleGameHeaderTitle}>
+            <Text style={styles.puzzleGameTitle}>
+              {dailyDate ? `THẾ CỜ NGÀY · ${formatDate(dailyDate)}` : puzzle.title.toUpperCase()}
+            </Text>
+            <Text style={styles.puzzleGameSubtitle}>
+              BÀI {puzzleIndex + 1}/{TACTICAL_PUZZLES.length} · {puzzle.difficulty.toUpperCase()}
+            </Text>
+          </View>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Đặt lại bài giải"
+            onPress={resetPuzzle}
+            style={styles.puzzleGameIconButton}
+          >
+            <Text style={styles.puzzleGameIcon}>↻</Text>
+          </Pressable>
+        </View>
+
+        <View style={styles.puzzlePrompt}>
+          <Text style={styles.puzzlePromptLabel}>NHIỆM VỤ</Text>
+          <Text style={styles.puzzlePromptText}>{puzzle.prompt}</Text>
+        </View>
+
+        <View
+          testID="puzzle-board-area"
+          style={styles.puzzleGameBoardArea}
+          onLayout={event => setBoardWidth(event.nativeEvent.layout.width)}
+        >
+          {boardWidth > 0 && (
+            <ChessBoard
+              board={board}
+              selectedSquare={selectedSquare}
+              validMoves={validMoves}
+              lastMove={lastMove}
+              onSquarePress={handleSquarePress}
+              isInteractive={!isSolved && !isSaving && !pendingSolution}
+              maxBoardWidth={boardWidth}
+            />
+          )}
+        </View>
+
+        <View style={styles.puzzleGameFooter}>
+          <View style={[styles.puzzleResult, isSolved && styles.puzzleResultSuccess]}>
+            <Text style={[styles.puzzleFeedback, { color: isSolved ? colors.accentGreen : colors.textSecondary }]}>
+              {saveError || feedback}
+            </Text>
+          </View>
+          <View style={styles.puzzleGameActions}>
+            {isSolved ? (
+              <TouchableOpacity
+                accessibilityRole="button"
+                onPress={onNext}
+                style={styles.puzzleResetButton}
+              >
+                <Text style={styles.puzzleResetText}>
+                  {puzzleIndex + 1 < TACTICAL_PUZZLES.length ? 'Bài tiếp theo →' : 'Hoàn thành bộ bài'}
+                </Text>
+              </TouchableOpacity>
+            ) : pendingSolution ? (
+              <TouchableOpacity
+                accessibilityRole="button"
+                disabled={isSaving}
+                onPress={() => void saveSolution(pendingSolution)}
+                style={[styles.puzzleResetButton, isSaving && styles.puzzleButtonDisabled]}
+              >
+                <Text style={styles.puzzleResetText}>{isSaving ? 'Đang lưu...' : 'Thử lưu lại'}</Text>
+              </TouchableOpacity>
+            ) : (
+              <TouchableOpacity
+                accessibilityRole="button"
+                onPress={resetPuzzle}
+                style={styles.puzzleResetButton}
+              >
+                <Text style={styles.puzzleResetText}>Đặt lại</Text>
+              </TouchableOpacity>
+            )}
+            <TouchableOpacity
+              accessibilityRole="button"
+              onPress={onClose}
+              style={styles.puzzleExitButton}
+            >
+              <Text style={styles.puzzleExitText}>Thoát bài</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
   );
 };
 
@@ -285,6 +511,74 @@ const ModesSection = () => {
   );
 };
 
+const PuzzleCollection = ({ progress, onStart }: {
+  progress: PuzzleProgressResponse;
+  onStart: (puzzle: TacticalPuzzle) => void;
+}) => {
+  const { styles, colors } = useTheme();
+  return (
+    <View style={styles.section}>
+      <View style={styles.sectionHeader}>
+        <Text style={styles.sectionTitle}>📚 BỘ SƯU TẬP THẾ CỜ</Text>
+        <Text style={styles.sectionNote}>
+          {progress.completedPuzzleIds.length}/{TACTICAL_PUZZLES.length} đã giải
+        </Text>
+      </View>
+      <View style={styles.card}>
+        {TACTICAL_PUZZLES.map((puzzle, index) => {
+          const isSolved = progress.completedPuzzleIds.includes(puzzle.id);
+          const isUnlocked = isSolved || progress.unlockedPuzzleId === puzzle.id;
+          const statusStyle = isSolved
+            ? styles.puzzleListCompleted
+            : isUnlocked ? styles.puzzleListUnlocked : styles.puzzleListLocked;
+          return (
+            <TouchableOpacity
+              key={puzzle.id}
+              accessibilityRole="button"
+              accessibilityLabel={`Bài ${index + 1}: ${puzzle.title}${isSolved ? ', đã giải' : isUnlocked ? ', đã mở khóa' : ', chưa mở khóa'}`}
+              accessibilityState={{ disabled: !isUnlocked }}
+              disabled={!isUnlocked}
+              onPress={() => onStart(puzzle)}
+              style={[styles.puzzleListItem, index > 0 && styles.puzzleListItemBorder]}
+            >
+              <View style={[styles.puzzleListNumber, statusStyle]}>
+                <Text style={[
+                  styles.puzzleListNumberText,
+                  isSolved && styles.puzzleListCompletedNumberText,
+                  !isUnlocked && styles.puzzleListLockedText,
+                ]}>
+                  {isSolved ? '✓' : index + 1}
+                </Text>
+              </View>
+              <View style={styles.puzzleListInfo}>
+                <Text style={[
+                  styles.puzzleListTitle,
+                  isSolved && styles.puzzleListCompletedText,
+                  isUnlocked && !isSolved && styles.puzzleListUnlockedText,
+                  !isUnlocked && styles.puzzleListLockedText,
+                ]}>{puzzle.title}</Text>
+                <Text style={[
+                  styles.puzzleListMeta,
+                  isSolved && styles.puzzleListCompletedText,
+                  isUnlocked && !isSolved && styles.puzzleListUnlockedText,
+                  !isUnlocked && styles.puzzleListLockedText,
+                ]}>
+                  {puzzle.theme} · {puzzle.difficulty}
+                </Text>
+              </View>
+              <Text style={[styles.puzzleListAction, {
+                color: isSolved ? colors.primary : isUnlocked ? colors.accentBlue : colors.textMuted,
+              }]}>
+                {isSolved ? 'Đã giải' : isUnlocked ? 'Giải ›' : 'Đã khóa'}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+    </View>
+  );
+};
+
 // ============================================================
 // WEEKLY LEADERBOARD
 // ============================================================
@@ -330,51 +624,215 @@ const Leaderboard = () => {
 // ============================================================
 // TAB BAR
 // ============================================================
-const TabBar = () => {
-  const { styles, colors, onNavigate } = useTheme();
-  return (
-    <View style={styles.tabBar}>
-      {TABS.map(t => {
-        const active = t.id === 'puzzle';
-        return (
-          <TouchableOpacity key={t.id} style={styles.tabItem} onPress={() => onNavigate?.(t.id)}>
-            <Text style={[styles.tabIcon, { opacity: active ? 1 : 0.5 }]}>{t.icon}</Text>
-            <Text style={[styles.tabLabel, { color: active ? colors.tabBarActive : colors.tabBarInactive }]}>{t.label}</Text>
-            {active && <View style={styles.tabIndicator} />}
-          </TouchableOpacity>
-        );
-      })}
-    </View>
-  );
-};
-
 // ============================================================
 // SCREEN
 // ============================================================
-const PuzzleScreen = ({ onNavigate }: { onNavigate?: (id: string) => void }) => {
-  const [isDark, setIsDark] = useState(true);
+const PuzzleScreen = () => {
+  const isDark = useArcaneThemeStore(state => state.isDark);
+  const toggleTheme = useArcaneThemeStore(state => state.toggleTheme);
+  const isAuthenticated = useAuthStore(state => state.isAuthenticated);
+  const isGuest = useAuthStore(state => state.isGuest);
+  const userId = useAuthStore(state => state.userId);
+  const exitGuestMode = useAuthStore(state => state.exitGuestMode);
+  const [storedProgress, setStoredProgress] = useState<PuzzleProgressResponse | null>(null);
+  const [progressOwner, setProgressOwner] = useState<string | null>(null);
+  const [isProgressLoading, setIsProgressLoading] = useState(true);
+  const [progressError, setProgressError] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [retryCount, setRetryCount] = useState(0);
+  const [isPuzzleOpen, setIsPuzzleOpen] = useState(false);
+  const [activePuzzle, setActivePuzzle] = useState<TacticalPuzzle>(TACTICAL_PUZZLES[0]);
+  const [dailyDate, setDailyDate] = useState<string | null>(null);
+  const progress = progressOwner === userId ? storedProgress : null;
+  const shouldShowProgressLoading = isProgressLoading || (
+    isAuthenticated && Boolean(userId) && !progress && !progressError
+  );
+  const dailyPuzzle = progress ? getPuzzleById(progress.dailyPuzzleId) : null;
+  const puzzleIndex = TACTICAL_PUZZLES.findIndex(puzzle => puzzle.id === activePuzzle.id);
   const colors: Palette = isDark ? COLORS : LIGHT_COLORS;
   const styles = React.useMemo(() => makeStyles(colors), [isDark]);
   const ctx = React.useMemo(
-    () => ({ isDark, toggle: () => setIsDark(v => !v), colors, styles, onNavigate }),
-    [isDark, styles, onNavigate],
+    () => ({ isDark, toggle: toggleTheme, colors, styles }),
+    [isDark, styles, toggleTheme],
   );
+
+  useEffect(() => {
+    if (!isAuthenticated || !userId) {
+      setStoredProgress(null);
+      setProgressOwner(null);
+      setProgressError(null);
+      setIsProgressLoading(false);
+      return;
+    }
+
+    let active = true;
+    setIsProgressLoading(true);
+    setProgressError(null);
+    apiService.getPuzzleProgress().then(response => {
+      if (!active) return;
+      if (!response.data) {
+        setProgressError(response.error || 'Không thể tải tiến độ giải đố.');
+        return;
+      }
+      setStoredProgress(response.data);
+      setProgressOwner(userId);
+    }).catch(error => {
+      if (active) setProgressError(error instanceof Error ? error.message : 'Không thể tải tiến độ giải đố.');
+    }).finally(() => {
+      if (active) setIsProgressLoading(false);
+    });
+
+    return () => {
+      active = false;
+    };
+  }, [isAuthenticated, retryCount, userId]);
+
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    let timeout: ReturnType<typeof setTimeout>;
+    const scheduleUtcRefresh = () => {
+      const now = new Date();
+      const nextUtcMidnight = Date.UTC(
+        now.getUTCFullYear(),
+        now.getUTCMonth(),
+        now.getUTCDate() + 1,
+      ) + 1000;
+      timeout = setTimeout(() => {
+        setRetryCount(count => count + 1);
+        scheduleUtcRefresh();
+      }, Math.max(1000, nextUtcMidnight - now.getTime()));
+    };
+    scheduleUtcRefresh();
+    const subscription = AppState.addEventListener('change', state => {
+      if (state === 'active') setRetryCount(count => count + 1);
+    });
+    return () => {
+      clearTimeout(timeout);
+      subscription.remove();
+    };
+  }, [isAuthenticated]);
+
+  const savePuzzleSolution = async (
+    puzzleId: string,
+    solutionUci: string,
+    isDaily: boolean,
+  ): Promise<boolean> => {
+    if (!userId || !isAuthenticated) return false;
+    setSaveError(null);
+    const response = await apiService.completePuzzle(puzzleId, solutionUci, isDaily);
+    if (!response.data) {
+      setSaveError(response.error || 'Không thể lưu tiến độ. Hãy thử lại.');
+      return false;
+    }
+    setStoredProgress(response.data);
+    setProgressOwner(userId);
+    return true;
+  };
+
+  const openPuzzle = (puzzle: TacticalPuzzle, selectedDailyDate: string | null = null) => {
+    setActivePuzzle(puzzle);
+    setDailyDate(selectedDailyDate);
+    setSaveError(null);
+    setIsPuzzleOpen(true);
+  };
+
+  const handleNextPuzzle = () => {
+    const nextPuzzle = TACTICAL_PUZZLES[puzzleIndex + 1];
+    if (!nextPuzzle) {
+      setIsPuzzleOpen(false);
+      return;
+    }
+    setActivePuzzle(nextPuzzle);
+    setDailyDate(null);
+  };
 
   return (
     <ThemeContext.Provider value={ctx}>
       <View style={styles.container}>
         <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} backgroundColor={colors.backgroundDark} />
         <Header />
-        <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-          <TitleBar />
-          <StatCards />
-          <StreakCard />
-          <DailyPuzzle />
-          <ModesSection />
-          <Leaderboard />
-          <View style={{ height: 100 }} />
-        </ScrollView>
-        <TabBar />
+        {!isAuthenticated ? (
+          <View style={styles.accountGate}>
+            <Text style={styles.accountGateTitle}>Đăng nhập để lưu tiến độ</Text>
+            <Text style={styles.accountGateText}>
+              Chuỗi ngày và bài đã mở khóa được đồng bộ riêng cho tài khoản Supabase của bạn.
+            </Text>
+            {isGuest && (
+              <TouchableOpacity
+                accessibilityRole="button"
+                onPress={exitGuestMode}
+                style={styles.startBtn}
+              >
+                <Text style={styles.startText}>ĐĂNG NHẬP</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        ) : shouldShowProgressLoading && !progress ? (
+          <View style={styles.progressState}>
+            <ActivityIndicator color={colors.primary} />
+            <Text style={styles.progressStateText}>Đang tải tiến độ từ máy chủ...</Text>
+          </View>
+        ) : !progress ? (
+          <View style={styles.accountGate}>
+            <Text style={styles.accountGateTitle}>Không tải được tiến độ</Text>
+            <Text style={styles.accountGateText}>{progressError || 'Vui lòng thử lại.'}</Text>
+            <TouchableOpacity
+              accessibilityRole="button"
+              onPress={() => setRetryCount(count => count + 1)}
+              style={styles.startBtn}
+            >
+              <Text style={styles.startText}>THỬ LẠI</Text>
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+            <TitleBar />
+            <StatCards />
+            {progressError && (
+              <View style={styles.progressError}>
+                <Text style={styles.progressErrorText}>{progressError}</Text>
+                <TouchableOpacity
+                  accessibilityRole="button"
+                  onPress={() => setRetryCount(count => count + 1)}
+                >
+                  <Text style={styles.progressRetry}>Thử lại</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+            <StreakCard progress={progress} />
+            {dailyPuzzle ? (
+              <>
+                <DailyPuzzle
+                  puzzle={dailyPuzzle}
+                  date={progress.today}
+                  isSolved={progress.lastDailySolvedOn === progress.today}
+                  onStart={() => openPuzzle(dailyPuzzle, progress.today)}
+                />
+                <PuzzleCollection
+                  progress={progress}
+                  onStart={puzzle => openPuzzle(puzzle)}
+                />
+                <ModesSection />
+                <Leaderboard />
+              </>
+            ) : (
+              <View style={styles.progressError}>
+                <Text style={styles.progressErrorText}>Máy chủ trả về mã bài giải đố không hợp lệ.</Text>
+              </View>
+            )}
+            <View style={{ height: 100 }} />
+          </ScrollView>
+        )}
+        <PuzzleGameModal
+          visible={isPuzzleOpen}
+          puzzle={activePuzzle}
+          dailyDate={dailyDate}
+          puzzleIndex={puzzleIndex}
+          saveError={saveError}
+          onClose={() => setIsPuzzleOpen(false)}
+          onSolved={savePuzzleSolution}
+          onNext={handleNextPuzzle}
+        />
       </View>
     </ThemeContext.Provider>
   );
@@ -455,16 +913,33 @@ const makeStyles = (COLORS: Palette) => StyleSheet.create({
   // streak
   streakTitle: { fontSize: 10, fontWeight: FONT_WEIGHT.extrabold, color: COLORS.primary, letterSpacing: 0.5, flex: 1 },
   streakNote: { fontSize: 10, color: COLORS.textMuted },
-  daysRow: { flexDirection: 'row', justifyContent: 'space-between' },
-  dayItem: { alignItems: 'center', gap: 4 },
-  dayCircle: {
-    width: 34, height: 34, borderRadius: 17, backgroundColor: COLORS.surface, borderWidth: 1,
-    borderColor: COLORS.border, justifyContent: 'center', alignItems: 'center',
+  streakStats: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    borderTopWidth: 1,
+    borderTopColor: COLORS.border,
+    paddingTop: SPACING.md,
   },
-  dayDone: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
-  dayToday: { borderColor: COLORS.accent, backgroundColor: COLORS.accent + '22' },
-  dayIcon: { fontSize: 13, color: COLORS.textMuted, fontWeight: FONT_WEIGHT.bold },
-  dayLabel: { fontSize: 9, color: COLORS.textMuted },
+  streakStatText: { color: COLORS.textMuted, fontSize: FONT_SIZE.xs },
+  streakRecord: { fontSize: FONT_SIZE.sm, fontWeight: FONT_WEIGHT.extrabold },
+  accountGate: { flex: 1, justifyContent: 'center', padding: SPACING.xl, gap: SPACING.md },
+  accountGateTitle: { color: COLORS.textPrimary, fontSize: FONT_SIZE.lg, fontWeight: FONT_WEIGHT.extrabold, textAlign: 'center' },
+  accountGateText: { color: COLORS.textSecondary, fontSize: FONT_SIZE.sm, lineHeight: 20, textAlign: 'center' },
+  progressState: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: SPACING.md },
+  progressStateText: { color: COLORS.textSecondary, fontSize: FONT_SIZE.sm },
+  progressError: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: SPACING.md,
+    padding: SPACING.md,
+    marginBottom: SPACING.md,
+    borderRadius: BORDER_RADIUS.md,
+    backgroundColor: COLORS.accentRed + '15',
+  },
+  progressErrorText: { color: COLORS.accentRed, fontSize: FONT_SIZE.xs, flex: 1 },
+  progressRetry: { color: COLORS.primary, fontSize: FONT_SIZE.xs, fontWeight: FONT_WEIGHT.bold },
 
   // daily puzzle
   dailyTitle: { fontSize: 11, fontWeight: FONT_WEIGHT.extrabold, color: COLORS.textPrimary, letterSpacing: 0.5 },
@@ -473,17 +948,85 @@ const makeStyles = (COLORS: Palette) => StyleSheet.create({
     borderColor: COLORS.accentRed + '66', paddingHorizontal: 6, paddingVertical: 2,
   },
   legendTagText: { fontSize: 8, fontWeight: FONT_WEIGHT.extrabold, color: COLORS.accentRed },
-  boardWrap: { alignItems: 'center', marginBottom: SPACING.md },
-  board: {
-    width: 176, height: 176, flexDirection: 'row', flexWrap: 'wrap', borderRadius: BORDER_RADIUS.sm,
-    overflow: 'hidden', borderWidth: 2, borderColor: COLORS.border,
-  },
-  square: { width: 22, height: 22, justifyContent: 'center', alignItems: 'center' },
-  squareLight: { backgroundColor: '#C9CCD6' },
-  squareDark: { backgroundColor: '#3C4258' },
-  piece: { fontSize: 15, color: COLORS.primary },
+  boardWrap: { alignItems: 'center', width: '100%', marginBottom: SPACING.md },
+  board: { width: '100%', alignItems: 'center' },
   turnText: { fontSize: 11, fontWeight: FONT_WEIGHT.extrabold, color: COLORS.accent, textAlign: 'center', letterSpacing: 0.5 },
+  puzzleFeedback: { fontSize: FONT_SIZE.xs, fontWeight: FONT_WEIGHT.semibold, textAlign: 'center', marginTop: SPACING.xs },
   dailyDesc: { fontSize: FONT_SIZE.sm, color: COLORS.textSecondary, textAlign: 'center', lineHeight: 18, marginVertical: SPACING.md },
+  puzzleGameScreen: {
+    flex: 1,
+    paddingHorizontal: SPACING.lg,
+    backgroundColor: COLORS.background,
+  },
+  puzzleGameHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.md,
+    paddingBottom: SPACING.lg,
+  },
+  puzzleGameIconButton: {
+    width: 44,
+    height: 44,
+    borderRadius: BORDER_RADIUS.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: COLORS.backgroundCard,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  puzzleGameIcon: { color: COLORS.textPrimary, fontSize: 28, lineHeight: 30, fontWeight: FONT_WEIGHT.bold },
+  puzzleGameHeaderTitle: { flex: 1, minWidth: 0 },
+  puzzleGameTitle: { color: COLORS.textPrimary, fontSize: FONT_SIZE.md, fontWeight: FONT_WEIGHT.extrabold },
+  puzzleGameSubtitle: { color: COLORS.textMuted, fontSize: 9, fontWeight: FONT_WEIGHT.bold, marginTop: 3 },
+  puzzlePrompt: {
+    padding: SPACING.md,
+    borderRadius: BORDER_RADIUS.md,
+    backgroundColor: COLORS.backgroundCard,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  puzzlePromptLabel: { color: COLORS.primary, fontSize: 9, fontWeight: FONT_WEIGHT.extrabold, letterSpacing: 1 },
+  puzzlePromptText: { color: COLORS.textPrimary, fontSize: FONT_SIZE.sm, fontWeight: FONT_WEIGHT.semibold, marginTop: 4 },
+  puzzleGameBoardArea: {
+    flex: 1,
+    width: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  puzzleGameFooter: { gap: SPACING.md, paddingTop: SPACING.sm },
+  puzzleResult: {
+    minHeight: 48,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: SPACING.md,
+    borderRadius: BORDER_RADIUS.md,
+    backgroundColor: COLORS.backgroundCard,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  puzzleResultSuccess: { borderColor: COLORS.accentGreen },
+  puzzleGameActions: { flexDirection: 'row', gap: SPACING.md },
+  puzzleResetButton: {
+    flex: 1,
+    minHeight: 48,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: BORDER_RADIUS.md,
+    backgroundColor: COLORS.surfaceElevated,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  puzzleButtonDisabled: { opacity: 0.55 },
+  puzzleResetText: { color: COLORS.textPrimary, fontSize: FONT_SIZE.sm, fontWeight: FONT_WEIGHT.bold },
+  puzzleExitButton: {
+    flex: 1,
+    minHeight: 48,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: BORDER_RADIUS.md,
+    backgroundColor: COLORS.primary,
+  },
+  puzzleExitText: { color: '#1A1205', fontSize: FONT_SIZE.sm, fontWeight: FONT_WEIGHT.extrabold },
   rewardRow: { flexDirection: 'row', justifyContent: 'center', gap: SPACING.sm, marginBottom: SPACING.lg },
   rewardChip: {
     backgroundColor: COLORS.surface, borderRadius: BORDER_RADIUS.sm, borderWidth: 1, borderColor: COLORS.border,
@@ -525,6 +1068,24 @@ const makeStyles = (COLORS: Palette) => StyleSheet.create({
     backgroundColor: COLORS.surfaceElevated, borderWidth: 1, borderColor: COLORS.border, alignItems: 'center',
   },
   ctaText: { fontSize: FONT_SIZE.sm + 1, fontWeight: FONT_WEIGHT.bold, color: COLORS.textPrimary },
+  puzzleListItem: { flexDirection: 'row', alignItems: 'center', gap: SPACING.md, paddingVertical: SPACING.md },
+  puzzleListItemBorder: { borderTopWidth: 1, borderTopColor: COLORS.border },
+  puzzleListNumber: {
+    width: 32, height: 32, borderRadius: 16, backgroundColor: COLORS.surface,
+    borderWidth: 1, borderColor: COLORS.border, alignItems: 'center', justifyContent: 'center',
+  },
+  puzzleListCompleted: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
+  puzzleListUnlocked: { backgroundColor: COLORS.accentBlue + '22', borderColor: COLORS.accentBlue },
+  puzzleListLocked: { backgroundColor: COLORS.surface, borderColor: COLORS.border },
+  puzzleListNumberText: { color: COLORS.primary, fontSize: FONT_SIZE.sm, fontWeight: FONT_WEIGHT.extrabold },
+  puzzleListCompletedNumberText: { color: '#1A1205' },
+  puzzleListCompletedText: { color: COLORS.primary },
+  puzzleListUnlockedText: { color: COLORS.accentBlue },
+  puzzleListLockedText: { color: COLORS.textMuted },
+  puzzleListInfo: { flex: 1, gap: 3 },
+  puzzleListTitle: { color: COLORS.textPrimary, fontSize: FONT_SIZE.sm, fontWeight: FONT_WEIGHT.bold },
+  puzzleListMeta: { color: COLORS.textMuted, fontSize: FONT_SIZE.xs },
+  puzzleListAction: { fontSize: FONT_SIZE.xs, fontWeight: FONT_WEIGHT.extrabold },
 
   // leaderboard
   leaderRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: SPACING.sm },
@@ -547,16 +1108,6 @@ const makeStyles = (COLORS: Palette) => StyleSheet.create({
   challengeBtn: { backgroundColor: COLORS.primary, borderRadius: BORDER_RADIUS.md, paddingHorizontal: SPACING.md, paddingVertical: SPACING.sm },
   challengeText: { fontSize: FONT_SIZE.xs, fontWeight: FONT_WEIGHT.extrabold, color: '#1A1205' },
 
-  // tab bar
-  tabBar: {
-    flexDirection: 'row', backgroundColor: COLORS.tabBarBg, borderTopWidth: 1, borderTopColor: COLORS.border,
-    paddingBottom: SPACING.lg, paddingTop: SPACING.sm, paddingHorizontal: SPACING.sm,
-    position: 'absolute', bottom: 0, left: 0, right: 0,
-  },
-  tabItem: { flex: 1, alignItems: 'center', paddingVertical: SPACING.xs },
-  tabIcon: { fontSize: 20, marginBottom: 2 },
-  tabLabel: { fontSize: 9, fontWeight: FONT_WEIGHT.medium },
-  tabIndicator: { position: 'absolute', top: -SPACING.sm - 1, width: 24, height: 3, backgroundColor: COLORS.primary, borderRadius: 1.5 },
 });
 
 export default PuzzleScreen;

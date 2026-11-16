@@ -11,7 +11,7 @@ import { useAuthStore } from '../../store/authStore';
 export const ProfileScreen = () => {
   const navigation = useNavigation<NativeStackNavigationProp<any>>();
   const { profile, stats } = usePlayerStore();
-  const { isAuthenticated, username, email, logout } = useAuthStore();
+  const { isAuthenticated, username, email, logout, exitGuestMode } = useAuthStore();
 
   if (!profile) {
     return (
@@ -77,7 +77,7 @@ export const ProfileScreen = () => {
           {isAuthenticated ? (
             <GradientButton title="Đăng xuất" onPress={() => { void logout(); }} variant="outline" fullWidth style={styles.actionBtn} />
           ) : (
-            <GradientButton title="Đăng nhập / Đăng ký" onPress={() => navigation.navigate('Login')} fullWidth style={styles.actionBtn} />
+            <GradientButton title="Đăng nhập / Đăng ký" onPress={exitGuestMode} fullWidth style={styles.actionBtn} />
           )}
           <GradientButton 
             title="Cài đặt máy chủ"

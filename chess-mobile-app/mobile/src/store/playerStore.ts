@@ -19,8 +19,6 @@ interface PlayerStore {
   addGold: (amount: number) => void;
   addGems: (amount: number) => void;
   setCurrency: (gold: number, gems: number) => void;
-  spendGold: (amount: number) => boolean;
-  spendGems: (amount: number) => boolean;
   addExperience: (amount: number) => void;
   updateRating: (change: number) => void;
   recordWin: () => void;
@@ -28,7 +26,7 @@ interface PlayerStore {
   recordDraw: () => void;
 }
 
-export const usePlayerStore = create<PlayerStore>()(persist((set, get) => ({
+export const usePlayerStore = create<PlayerStore>()(persist((set) => ({
   profile: {
     id: 'player_1',
     username: 'Khách',
@@ -88,20 +86,6 @@ export const usePlayerStore = create<PlayerStore>()(persist((set, get) => ({
         gems: Math.max(0, gems),
       } : null,
     }));
-  },
-
-  spendGold: (amount) => {
-    const { profile } = get();
-    if (!profile || profile.gold < amount) return false;
-    set({ profile: { ...profile, gold: profile.gold - amount } });
-    return true;
-  },
-
-  spendGems: (amount) => {
-    const { profile } = get();
-    if (!profile || profile.gems < amount) return false;
-    set({ profile: { ...profile, gems: profile.gems - amount } });
-    return true;
   },
 
   addExperience: (amount) => {

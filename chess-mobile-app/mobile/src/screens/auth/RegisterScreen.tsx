@@ -21,20 +21,18 @@ export const RegisterScreen = () => {
       Alert.alert('Lỗi', 'Vui lòng điền đầy đủ thông tin');
       return;
     }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
+      Alert.alert('Lỗi', 'Vui lòng nhập địa chỉ email hợp lệ, ví dụ example@gmail.com');
+      return;
+    }
     if (password !== confirmPassword) {
       Alert.alert('Lỗi', 'Mật khẩu xác nhận không khớp');
       return;
     }
     try {
       setLoading(true);
-      const confirmationRequired = await register(email, password, username);
-      if (confirmationRequired) {
-        Alert.alert('Kiểm tra email', 'Xác nhận email trước khi đăng nhập.', [
-          { text: 'OK', onPress: () => navigation.navigate('Login') }
-        ]);
-      } else {
-        navigation.navigate('MainTabs', { screen: 'Profile' });
-      }
+      await register(email, password, username);
+      navigation.navigate('MainTabs', { screen: 'Profile' });
     } catch (err: any) {
       Alert.alert('Lỗi', err.message || 'Đăng ký thất bại');
     } finally {

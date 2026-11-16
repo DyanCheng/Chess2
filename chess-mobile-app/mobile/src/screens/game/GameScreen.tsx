@@ -3,7 +3,7 @@
 // ============================================================
 
 import React, { useEffect } from 'react';
-import { View, StyleSheet, SafeAreaView, Alert, Text } from 'react-native';
+import { View, StyleSheet, SafeAreaView, Alert, Text, Pressable } from 'react-native';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { COLORS, SPACING } from '../../constants/theme';
@@ -17,6 +17,7 @@ import { PlayerInfoBar } from '../../components/game/PlayerInfoBar';
 import { CardHand } from '../../components/cards/CardHand';
 import { GameOverModal } from '../../components/game/GameOverModal';
 import { GradientButton } from '../../components/common/GradientButton';
+import { fromAlgebraic } from '../../utils/chessUtils';
 
 type GameScreenRouteProp = RouteProp<RootStackParamList, 'GamePvE'>;
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
@@ -25,13 +26,14 @@ export const GameScreen: React.FC = () => {
   const navigation = useNavigation<NavigationProp>();
   const route = useRoute<GameScreenRouteProp>();
   const { profile } = usePlayerStore();
+  const [boardFlipped, setBoardFlipped] = React.useState(false);
   
   const {
     gameId, mode, status, board, currentTurn, playerColor,
     validMoves, selectedSquare, lastMove, inCheck, timer, whiteHP, blackHP,
-    playerCards, selectedCard, showGameOverModal, gameResult,
+    playerCards, activeEffects, selectedCard, targetingCard, showGameOverModal, gameResult,
     startPvPGame, startBotGame, selectSquare, selectCard, useCard,
-    resignGame, resetGame, isPlayerTurn
+    agreeDraw, resignGame, resetGame, isPlayerTurn, moveCount
   } = useGame();
 
   // Initialize game on mount
@@ -64,6 +66,17 @@ export const GameScreen: React.FC = () => {
     );
   };
 
+  const handleAgreeDraw = () => {
+    Alert.alert(
+      'Kết thúc hòa',
+      'Bạn có muốn kết thúc ván này với kết quả hòa không?',
+      [
+        { text: 'Tiếp tục chơi', style: 'cancel' },
+        { text: 'Đồng ý hòa', onPress: agreeDraw },
+      ],
+    );
+  };
+
   const handlePlayAgain = () => {
     resetGame();
     if (route.name === 'GamePvE') {
@@ -80,6 +93,27 @@ export const GameScreen: React.FC = () => {
     navigation.navigate('MainTabs', { screen: 'Home' });
   };
 
+  const handleExitMatch = () => {
+    Alert.alert(
+      'Thoát trận',
+      'Ván đấu sẽ bị hủy, không được ghi vào lịch sử và không nhận thưởng. Bạn có muốn thoát?',
+      [
+        { text: 'Ở lại', style: 'cancel' },
+        {
+          text: 'Thoát trận',
+          style: 'destructive',
+          onPress: () => {
+            resetGame();
+            navigation.navigate('MainTabs', { screen: 'Home' });
+          },
+        },
+      ],
+    );
+  };
+
+  const openSettings = () => navigation.navigate('MainTabs', { screen: 'Settings' });
+  const openProfile = () => navigation.navigate('MainTabs', { screen: 'Profile' });
+
   if (!profile || status === 'waiting') {
     return <View style={styles.safeArea} />; // Loading state
   }
@@ -95,6 +129,42 @@ export const GameScreen: React.FC = () => {
       <View style={styles.background} />
       
       <View style={styles.container}>
+        <View style={styles.header}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Thoát trận"
+            onPress={handleExitMatch}
+            style={styles.headerButton}
+          >
+            <Text style={styles.headerButtonText}>×</Text>
+          </Pressable>
+          <View style={styles.headerTitle}>
+            <Text style={styles.screenTitle} numberOfLines={1}>Đấu trường Ma Pháp</Text>
+            <Text style={styles.screenSubtitle}>Chế độ bot · {opponentName}</Text>
+          </View>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Cài đặt"
+            onPress={openSettings}
+            style={styles.headerButton}
+          >
+            <Text style={styles.headerButtonText}>⚙</Text>
+          </Pressable>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Hồ sơ"
+            onPress={openProfile}
+            style={styles.headerButton}
+          >
+            <Text style={styles.headerButtonText}>♙</Text>
+          </Pressable>
+        </View>
+
+        <View style={styles.modeBar}>
+          <Text style={styles.modeText}>⚔  ĐẤU VỚI MÁY</Text>
+          <Text style={styles.modeDetail}>CẤP {opponentLevel}</Text>
+        </View>
+
         {/* Opponent Info (Top) */}
         <View style={styles.topSection}>
           <PlayerInfoBar
@@ -114,11 +184,22 @@ export const GameScreen: React.FC = () => {
             board={board}
             selectedSquare={selectedSquare}
             validMoves={validMoves}
+            effectSquares={activeEffects
+              .filter(effect => effect.isActive && effect.targetSquare)
+              .map(effect => fromAlgebraic(effect.targetSquare!))}
             lastMove={lastMove}
             onSquarePress={selectSquare}
-            isFlipped={playerColor === 'black'}
+            isFlipped={boardFlipped ? playerColor !== 'black' : playerColor === 'black'}
             isInteractive={isPlayerTurn && status === 'playing'}
           />
+        </View>
+
+        <View style={styles.turnBar}>
+          <Text style={[styles.turnDot, isPlayerTurn && styles.playerTurnDot]}>●</Text>
+          <Text style={styles.turnText}>
+            {status === 'finished' ? 'VÁN ĐẤU ĐÃ KẾT THÚC' : isPlayerTurn ? 'LƯỢT CỦA BẠN' : 'BOT ĐANG ĐI'}
+          </Text>
+          <Text style={styles.moveCount}>NƯỚC {moveCount}</Text>
         </View>
 
         {/* Player Info (Bottom) */}
@@ -150,17 +231,38 @@ export const GameScreen: React.FC = () => {
             onSelectCard={selectCard}
             onUseCard={useCard}
             isPlayerTurn={isPlayerTurn}
+            targetingCardId={targetingCard?.card.id}
           />
         </View>
         
         {/* Action bar */}
         <View style={styles.actionBar}>
-          <GradientButton 
-            title="Đầu hàng" 
-            onPress={handleResign} 
-            variant="outline" 
-            size="small" 
-          />
+          <Pressable
+            accessibilityRole="button"
+            disabled={status !== 'playing'}
+            onPress={handleAgreeDraw}
+            style={[styles.actionButton, styles.drawButton, status !== 'playing' && styles.disabledButton]}
+          >
+            <Text style={styles.drawIcon}>♧</Text>
+            <Text style={styles.actionText}>Hòa</Text>
+          </Pressable>
+          <Pressable
+            accessibilityRole="button"
+            disabled={status !== 'playing'}
+            onPress={handleResign}
+            style={[styles.actionButton, styles.resignButton, status !== 'playing' && styles.disabledButton]}
+          >
+            <Text style={styles.resignIcon}>⚑</Text>
+            <Text style={styles.actionText}>Đầu hàng</Text>
+          </Pressable>
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => setBoardFlipped(value => !value)}
+            style={[styles.actionButton, styles.boardButton]}
+          >
+            <Text style={styles.boardIcon}>↻</Text>
+            <Text style={styles.actionText}>Xoay bàn</Text>
+          </Pressable>
         </View>
       </View>
 
@@ -192,6 +294,59 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     justifyContent: 'space-between',
+    paddingHorizontal: SPACING.md,
+    paddingTop: SPACING.sm,
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.sm,
+  },
+  headerButton: {
+    width: 40,
+    height: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 12,
+    backgroundColor: '#1C2027',
+  },
+  headerButtonText: {
+    color: COLORS.textPrimary,
+    fontSize: 23,
+    fontWeight: '700',
+  },
+  headerTitle: {
+    flex: 1,
+    minWidth: 0,
+  },
+  screenTitle: {
+    color: COLORS.textPrimary,
+    fontSize: 17,
+    fontWeight: '800',
+  },
+  screenSubtitle: {
+    color: COLORS.textSecondary,
+    fontSize: 11,
+    marginTop: 2,
+  },
+  modeBar: {
+    minHeight: 32,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderRadius: 10,
+    paddingHorizontal: SPACING.md,
+    backgroundColor: '#1C2027',
+  },
+  modeText: {
+    color: COLORS.accentLight,
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  modeDetail: {
+    color: COLORS.textSecondary,
+    fontSize: 10,
+    fontWeight: '700',
   },
   topSection: {
     paddingHorizontal: SPACING.lg,
@@ -201,6 +356,33 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    minHeight: 0,
+  },
+  turnBar: {
+    minHeight: 32,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: SPACING.sm,
+    borderRadius: 10,
+    backgroundColor: '#1C2027',
+  },
+  turnDot: {
+    color: COLORS.textMuted,
+    fontSize: 12,
+  },
+  playerTurnDot: {
+    color: COLORS.accentLight,
+  },
+  turnText: {
+    color: COLORS.accentLight,
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  moveCount: {
+    color: COLORS.textSecondary,
+    fontSize: 9,
+    fontWeight: '700',
   },
   bottomSection: {
     paddingHorizontal: SPACING.lg,
@@ -210,9 +392,52 @@ const styles = StyleSheet.create({
     paddingBottom: SPACING.sm,
   },
   actionBar: {
-    paddingHorizontal: SPACING.lg,
-    paddingBottom: SPACING.lg,
-    alignItems: 'flex-start',
+    flexDirection: 'row',
+    gap: SPACING.sm,
+    paddingBottom: SPACING.md,
+    alignItems: 'center',
+  },
+  actionButton: {
+    flex: 1,
+    minHeight: 44,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: SPACING.xs,
+    borderRadius: 12,
+    backgroundColor: '#1C2027',
+  },
+  drawButton: {
+    borderWidth: 1,
+    borderColor: '#267B89',
+  },
+  resignButton: {
+    borderWidth: 1,
+    borderColor: '#7D3E46',
+  },
+  boardButton: {
+    borderWidth: 1,
+    borderColor: '#3A3E47',
+  },
+  drawIcon: {
+    color: '#61D8E5',
+    fontSize: 17,
+  },
+  resignIcon: {
+    color: '#FF8B92',
+    fontSize: 16,
+  },
+  boardIcon: {
+    color: COLORS.textSecondary,
+    fontSize: 18,
+  },
+  actionText: {
+    color: COLORS.textPrimary,
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  disabledButton: {
+    opacity: 0.45,
   },
   checkBanner: {
     position: 'absolute',

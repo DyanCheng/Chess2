@@ -23,7 +23,7 @@ export async function getServerSocket(): Promise<Socket> {
   return new Promise<Socket>((resolve, reject) => {
     const timeout = setTimeout(() => {
       cleanup();
-      reject(new Error('Không kết nối được backend. Kiểm tra IP, cổng 8080 và mạng Wi-Fi.'));
+      reject(new Error('Không kết nối được backend. Kiểm tra địa chỉ, cổng và mạng Wi-Fi.'));
     }, 8000);
     const onConnect = () => { cleanup(); resolve(current); };
     const onError = (error: Error) => { cleanup(); reject(error); };

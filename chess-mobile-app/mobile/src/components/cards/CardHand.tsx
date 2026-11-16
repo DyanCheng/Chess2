@@ -2,11 +2,12 @@
 // CardHand - Card hand display during game
 // ============================================================
 
-import React, { useRef } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Animated, ScrollView } from 'react-native';
-import { COLORS, SPACING, BORDER_RADIUS, FONT_SIZES, FONT_WEIGHTS, SHADOWS } from '../../constants/theme';
+import React from 'react';
+import { View, Text, StyleSheet, Pressable, ScrollView } from 'react-native';
+import { COLORS, SPACING, BORDER_RADIUS, FONT_SIZES, FONT_WEIGHTS } from '../../constants/theme';
 import { RARITY_CONFIG } from '../../constants/cards';
 import { CardInHand } from '../../types/card';
+import { SKILL_CARD_BY_ID } from '../../constants/skillCards';
 
 interface CardHandProps {
   cards: CardInHand[];
@@ -14,6 +15,7 @@ interface CardHandProps {
   onSelectCard: (card: CardInHand | null) => void;
   onUseCard: (card: CardInHand) => void;
   isPlayerTurn: boolean;
+  targetingCardId?: string | null;
 }
 
 export const CardHand: React.FC<CardHandProps> = ({
@@ -22,13 +24,19 @@ export const CardHand: React.FC<CardHandProps> = ({
   onSelectCard,
   onUseCard,
   isPlayerTurn,
+  targetingCardId,
 }) => {
+  const selectedSkill = selectedCard ? SKILL_CARD_BY_ID[selectedCard.card.id] : null;
   return (
     <View style={styles.container}>
+      <View style={styles.heading}>
+        <Text style={styles.headingText}>BỘ BÀI KỸ NĂNG</Text>
+        <Text style={styles.countText}>{cards.length} lá</Text>
+      </View>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
         {cards.map((cardInHand, index) => (
           <GameCard
-            key={cardInHand.card.id}
+            key={cardInHand.instanceId ?? cardInHand.card.id}
             cardInHand={cardInHand}
             isSelected={selectedCard?.card.id === cardInHand.card.id}
             onSelect={() => {
@@ -40,10 +48,38 @@ export const CardHand: React.FC<CardHandProps> = ({
             }}
             onUse={() => onUseCard(cardInHand)}
             isUsable={cardInHand.isUsable && isPlayerTurn && cardInHand.usesRemaining > 0 && cardInHand.cooldownRemaining === 0}
+            targeting={targetingCardId === cardInHand.card.id}
             index={index}
           />
         ))}
       </ScrollView>
+      {selectedCard && (
+        <View style={styles.details}>
+          <View style={styles.detailsHeader}>
+            <Text style={styles.detailsName} numberOfLines={1}>
+              {selectedSkill?.illustration ?? '✦'}  {selectedCard.card.name}
+            </Text>
+            <Text style={[styles.rarityText, { color: RARITY_CONFIG[selectedCard.card.rarity].color }]}>
+              {RARITY_CONFIG[selectedCard.card.rarity].label}
+            </Text>
+          </View>
+          <Text style={styles.description}>{selectedCard.card.description}</Text>
+          <Text style={styles.detailMeta}>
+            {selectedSkill?.effectLabel ?? selectedCard.card.effectType} · {selectedSkill?.durationLabel ?? 'Tức thì'}
+          </Text>
+          <Text style={styles.statusText}>
+            {targetingCardId === selectedCard.card.id
+              ? 'Chọn quân hoặc ô trên bàn cờ'
+              : !selectedCard.isUsable
+                ? 'Chưa đủ điều kiện để sử dụng'
+              : !isPlayerTurn
+                ? 'Chưa tới lượt của bạn'
+                : selectedCard.usesRemaining > 0
+                  ? 'Nhấn lần nữa để kích hoạt'
+                  : 'Đã sử dụng'}
+          </Text>
+        </View>
+      )}
     </View>
   );
 };
@@ -54,6 +90,7 @@ interface GameCardProps {
   onSelect: () => void;
   onUse: () => void;
   isUsable: boolean;
+  targeting: boolean;
   index: number;
 }
 
@@ -63,109 +100,78 @@ const GameCard: React.FC<GameCardProps> = ({
   onSelect,
   onUse,
   isUsable,
+  targeting,
   index,
 }) => {
-  const scaleAnim = useRef(new Animated.Value(1)).current;
-  const translateY = useRef(new Animated.Value(0)).current;
   const { card } = cardInHand;
   const rarityConfig = RARITY_CONFIG[card.rarity];
-
-  // Card effect icons
-  const getEffectIcon = () => {
-    const icons: Record<string, string> = {
-      shield: '🛡️',
-      heal: '💚',
-      double_damage: '⚔️',
-      freeze: '❄️',
-      resurrect: '✨',
-      swap: '🔄',
-      reveal: '👁️',
-      time_bonus: '⏰',
-      poison: '☠️',
-      mirror: '🪞',
-      teleport: '🌀',
-      fortify: '🏰',
-    };
-    return icons[card.effectType] || '🃏';
-  };
-
-  React.useEffect(() => {
-    if (isSelected) {
-      Animated.parallel([
-        Animated.spring(scaleAnim, { toValue: 1.1, useNativeDriver: true, tension: 200, friction: 10 }),
-        Animated.spring(translateY, { toValue: -20, useNativeDriver: true, tension: 200, friction: 10 }),
-      ]).start();
-    } else {
-      Animated.parallel([
-        Animated.spring(scaleAnim, { toValue: 1, useNativeDriver: true, tension: 200, friction: 10 }),
-        Animated.spring(translateY, { toValue: 0, useNativeDriver: true, tension: 200, friction: 10 }),
-      ]).start();
-    }
-  }, [isSelected]);
+  const skill = SKILL_CARD_BY_ID[card.id];
 
   return (
-    <Animated.View
+    <View
       style={[
         styles.cardWrapper,
-        {
-          transform: [{ scale: scaleAnim }, { translateY }],
-          zIndex: isSelected ? 10 : index,
-        },
+        { zIndex: isSelected ? 10 : index },
       ]}
     >
-      <TouchableOpacity
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={`${card.name}. ${card.description}. ${isUsable ? 'Có thể sử dụng' : 'Đang bị vô hiệu hóa'}`}
         onPress={isSelected ? onUse : onSelect}
         disabled={!isUsable && !isSelected}
-        activeOpacity={0.8}
         style={[
           styles.card,
           {
             borderColor: isSelected ? rarityConfig.color : rarityConfig.borderColor,
-            opacity: isUsable ? 1 : 0.5,
+            opacity: isUsable || isSelected ? 1 : 0.45,
           },
-          isSelected && {
-            shadowColor: rarityConfig.color,
-            shadowOffset: { width: 0, height: 0 },
-            shadowOpacity: 0.8,
-            shadowRadius: 12,
-            elevation: 12,
-          },
+          targeting && styles.targetingCard,
         ]}
       >
-        {/* Card icon */}
-        <Text style={styles.cardIcon}>{getEffectIcon()}</Text>
-
-        {/* Card name */}
-        <Text style={[styles.cardName, { color: rarityConfig.color }]} numberOfLines={1}>
+        <Text style={styles.cardIcon}>{skill?.illustration ?? '✦'}</Text>
+        <Text style={[styles.cardRarity, { color: rarityConfig.color }]} numberOfLines={1}>
+          {rarityConfig.label}
+        </Text>
+        <Text style={[styles.cardName, { color: rarityConfig.color }]} numberOfLines={2}>
           {card.name}
         </Text>
-
-        {/* Uses remaining */}
         <View style={styles.usesContainer}>
-          <Text style={styles.usesText}>x{cardInHand.usesRemaining}</Text>
+          <Text style={styles.usesText}>{cardInHand.usesRemaining > 0 ? `x${cardInHand.usesRemaining}` : '✓'}</Text>
         </View>
-
-        {/* Cooldown overlay */}
         {cardInHand.cooldownRemaining > 0 && (
           <View style={styles.cooldownOverlay}>
             <Text style={styles.cooldownText}>{cardInHand.cooldownRemaining}</Text>
           </View>
         )}
-
-        {/* Use button when selected */}
         {isSelected && isUsable && (
           <View style={[styles.useButton, { backgroundColor: rarityConfig.color }]}>
-            <Text style={styles.useButtonText}>Dùng</Text>
+            <Text style={styles.useButtonText}>{targeting ? 'Chọn mục tiêu' : 'Kích hoạt'}</Text>
           </View>
         )}
-      </TouchableOpacity>
-    </Animated.View>
+      </Pressable>
+    </View>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
     paddingVertical: SPACING.sm,
+    gap: SPACING.xs,
+  },
+  heading: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingHorizontal: SPACING.lg,
+  },
+  headingText: {
+    color: COLORS.textSecondary,
+    fontSize: FONT_SIZES.xs,
+    fontWeight: FONT_WEIGHTS.bold,
+    letterSpacing: 1,
+  },
+  countText: {
+    color: COLORS.textMuted,
+    fontSize: FONT_SIZES.xs,
   },
   scrollContent: {
     flexDirection: 'row',
@@ -176,18 +182,23 @@ const styles = StyleSheet.create({
     marginHorizontal: SPACING.xs,
   },
   card: {
-    width: 80,
-    height: 110,
+    width: 88,
+    height: 116,
     backgroundColor: COLORS.bgCard,
     borderRadius: BORDER_RADIUS.md,
-    borderWidth: 2,
+    borderWidth: 1.5,
     padding: SPACING.sm,
     alignItems: 'center',
     justifyContent: 'center',
     gap: SPACING.xs,
   },
   cardIcon: {
-    fontSize: 28,
+    fontSize: 24,
+  },
+  cardRarity: {
+    fontSize: 8,
+    fontWeight: FONT_WEIGHTS.bold,
+    textTransform: 'uppercase',
   },
   cardName: {
     fontSize: FONT_SIZES.xs,
@@ -235,5 +246,47 @@ const styles = StyleSheet.create({
     color: COLORS.white,
     fontSize: FONT_SIZES.xs,
     fontWeight: FONT_WEIGHTS.bold,
+  },
+  details: {
+    marginHorizontal: SPACING.lg,
+    padding: SPACING.sm,
+    borderRadius: BORDER_RADIUS.md,
+    borderWidth: 1,
+    borderColor: COLORS.surfaceBorder,
+    backgroundColor: COLORS.bgCard,
+    gap: 3,
+  },
+  detailsHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: SPACING.sm,
+  },
+  detailsName: {
+    color: COLORS.textPrimary,
+    fontSize: FONT_SIZES.sm,
+    fontWeight: FONT_WEIGHTS.bold,
+    flex: 1,
+  },
+  rarityText: {
+    fontSize: FONT_SIZES.xs,
+    fontWeight: FONT_WEIGHTS.bold,
+  },
+  description: {
+    color: COLORS.textSecondary,
+    fontSize: 10,
+    lineHeight: 14,
+  },
+  detailMeta: {
+    color: COLORS.accentLight,
+    fontSize: 9,
+    fontWeight: FONT_WEIGHTS.bold,
+  },
+  statusText: {
+    color: COLORS.textMuted,
+    fontSize: 9,
+  },
+  targetingCard: {
+    borderWidth: 2.5,
   },
 });

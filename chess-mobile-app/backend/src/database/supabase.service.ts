@@ -144,6 +144,136 @@ export class SupabaseService {
     return data;
   }
 
+  async getActiveShopItems(userId: string) {
+    const client = this.adminClient();
+    const { data: items, error: itemsError } = await client
+      .from('shop_items')
+      .select('id,name,description,item_type,reference_id,price,currency_type,stock,is_active,reward_currency,reward_gems,is_repeatable')
+      .eq('is_active', true)
+      .order('created_at', { ascending: true });
+    if (itemsError) throw new Error(`Supabase shop items select: ${itemsError.message}`);
+    if (!items?.length) return [];
+
+    const cardIds = (items ?? [])
+      .filter(item => item.item_type === 'CARD' && item.reference_id)
+      .map(item => item.reference_id);
+    const cardDefinitions = new Map<string, {
+      id: string;
+      name: string;
+      description: string | null;
+      effectType: string;
+      value: number;
+    }>();
+    if (cardIds.length) {
+      const { data: definitions, error: definitionsError } = await client
+        .from('function_cards')
+        .select('id,name,description,effect_type,effect_value')
+        .in('id', cardIds);
+      if (definitionsError) {
+        throw new Error(`Supabase shop card definitions select: ${definitionsError.message}`);
+      }
+      for (const card of definitions ?? []) {
+        cardDefinitions.set(card.id, {
+          id: card.id,
+          name: card.name,
+          description: card.description,
+          effectType: String(card.effect_type),
+          value: Number(card.effect_value),
+        });
+      }
+    }
+
+    const itemIds = items.map(item => item.id);
+    const { data: purchases, error: purchasesError } = await client
+      .from('purchases')
+      .select('shop_item_id,quantity')
+      .eq('user_id', userId)
+      .in('shop_item_id', itemIds);
+    if (purchasesError) throw new Error(`Supabase shop purchases select: ${purchasesError.message}`);
+
+    const { data: cards, error: cardsError } = await client
+      .from('user_cards')
+      .select('card_id,quantity')
+      .eq('user_id', userId);
+    if (cardsError) throw new Error(`Supabase shop inventory select: ${cardsError.message}`);
+
+    const purchaseCounts = new Map<string, number>();
+    for (const purchase of purchases ?? []) {
+      purchaseCounts.set(
+        purchase.shop_item_id,
+        (purchaseCounts.get(purchase.shop_item_id) ?? 0) + Number(purchase.quantity),
+      );
+    }
+    const cardCounts = new Map<string, number>();
+    for (const card of cards ?? []) {
+      cardCounts.set(card.card_id, (cardCounts.get(card.card_id) ?? 0) + Number(card.quantity));
+    }
+
+    return (items ?? []).map(item => {
+      const itemType = String(item.item_type);
+      const ownedQuantity = itemType === 'CARD' && item.reference_id
+        ? cardCounts.get(item.reference_id) ?? 0
+        : itemType === 'SKIN' ? purchaseCounts.get(item.id) ?? 0 : 0;
+      return {
+        id: item.id,
+        name: item.name,
+        description: item.description ?? cardDefinitions.get(item.reference_id)?.description ?? '',
+        itemType,
+        referenceId: item.reference_id,
+        price: Number(item.price),
+        currencyType: String(item.currency_type),
+        stock: item.stock === null ? null : Number(item.stock),
+        isActive: item.is_active,
+        ownedQuantity,
+        isOwned: ownedQuantity > 0,
+        canPurchaseMultiple: item.is_repeatable,
+        rewardCurrency: Number(item.reward_currency ?? 0),
+        rewardGems: Number(item.reward_gems ?? 0),
+        card: itemType === 'CARD' && item.reference_id
+          ? cardDefinitions.get(item.reference_id) ?? null
+          : null,
+      };
+    });
+  }
+
+  async purchaseShopItem(input: {
+    userId: string;
+    itemId: string;
+    quantity: number;
+    idempotencyKey: string;
+  }) {
+    const { data, error } = await this.adminClient().rpc('purchase_shop_item', {
+      p_user_id: input.userId,
+      p_item_id: input.itemId,
+      p_quantity: input.quantity,
+      p_idempotency_key: input.idempotencyKey,
+    });
+    if (error) throw new Error(`Supabase shop purchase: ${error.message}`);
+    const result = Array.isArray(data) ? data[0] : data;
+    if (!result) throw new Error('Supabase shop purchase did not return a result');
+    return result as {
+      purchase_id: string;
+      item_id: string;
+      item_name: string;
+      item_type: string;
+      reference_id: string | null;
+      quantity: number;
+      total_price: number | string;
+      currency_type: string;
+      replayed: boolean;
+      wallet_currency: number | string;
+      wallet_gems: number | string;
+      owned_quantity: number | string;
+      card_quantity: number | string;
+      reward_currency: number | string;
+      reward_gems: number | string;
+      card_name: string | null;
+      card_description: string | null;
+      card_effect_type: string | null;
+      card_effect_value: number | null;
+    };
+  }
+
   async creditIapPurchase(input: {
     userId: string;
     store: string;

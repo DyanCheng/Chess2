@@ -7,6 +7,7 @@ import { TouchableOpacity, Text, StyleSheet, Animated, View } from 'react-native
 import { COLORS, FONT_SIZES } from '../../constants/theme';
 import { ChessPiece } from '../../types/chess';
 import { PIECE_SYMBOLS } from '../../constants/chess';
+import { toAlgebraic } from '../../utils/chessUtils';
 
 interface ChessSquareProps {
   row: number;
@@ -15,6 +16,7 @@ interface ChessSquareProps {
   isLight: boolean;
   isSelected: boolean;
   isValidMove: boolean;
+  isEffectSquare?: boolean;
   isLastMove: boolean;
   isCapture: boolean;
   size: number;
@@ -28,6 +30,7 @@ export const ChessSquare: React.FC<ChessSquareProps> = React.memo(({
   isLight,
   isSelected,
   isValidMove,
+  isEffectSquare = false,
   isLastMove,
   isCapture,
   size,
@@ -70,7 +73,6 @@ export const ChessSquare: React.FC<ChessSquareProps> = React.memo(({
 
   const getBackgroundColor = () => {
     if (isSelected) return COLORS.boardHighlight;
-    if (isLastMove) return COLORS.boardLastMove;
     return isLight ? COLORS.boardLight : COLORS.boardDark;
   };
 
@@ -86,6 +88,8 @@ export const ChessSquare: React.FC<ChessSquareProps> = React.memo(({
 
   return (
     <TouchableOpacity
+      accessibilityRole="button"
+      accessibilityLabel={`Ô ${toAlgebraic({ row, col })}`}
       activeOpacity={0.8}
       onPress={onPress}
       onPressIn={handlePressIn}
@@ -102,6 +106,19 @@ export const ChessSquare: React.FC<ChessSquareProps> = React.memo(({
       {/* Selected highlight glow */}
       {isSelected && (
         <View style={[styles.selectedOverlay, { width: size, height: size }]} />
+      )}
+
+      {isLastMove && (
+        <View
+          pointerEvents="none"
+          style={[styles.lastMoveOverlay, { width: size, height: size }]}
+        />
+      )}
+      {isEffectSquare && (
+        <View
+          pointerEvents="none"
+          style={[styles.effectOverlay, { width: size, height: size }]}
+        />
       )}
 
       {/* Chess piece */}
@@ -164,6 +181,18 @@ const styles = StyleSheet.create({
   selectedOverlay: {
     position: 'absolute',
     backgroundColor: COLORS.boardHighlight,
+  },
+  lastMoveOverlay: {
+    position: 'absolute',
+    borderWidth: 2,
+    borderColor: COLORS.accent,
+    opacity: 0.65,
+  },
+  effectOverlay: {
+    position: 'absolute',
+    borderWidth: 3,
+    borderColor: COLORS.accentLight,
+    backgroundColor: 'rgba(124, 58, 237, 0.18)',
   },
   pieceContainer: {
     alignItems: 'center',
