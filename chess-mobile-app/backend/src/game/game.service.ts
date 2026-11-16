@@ -24,6 +24,7 @@ import {
   generateLegalMoves,
 } from '../bot/chess-engine/move-generator';
 import { PersistedMatchSnapshot, SupabaseService } from '../database/supabase.service';
+import { MatchRewardResult, MatchRewardService } from './match-reward.service';
 
 export interface ActiveGameSession {
   id: string;
@@ -66,6 +67,7 @@ export class GameService {
   private readonly playerGameMap = new Map<string, string>();
   private readonly waitingQueue: Array<{ id: string; emit?: Function; join?: Function }> = [];
   private readonly persistenceQueue = new Map<string, Promise<void>>();
+  private readonly matchRewardResults = new Map<string, MatchRewardResult[]>();
   private readonly logger = new Logger(GameService.name);
 
   private readonly stateService: GameStateService;
@@ -81,6 +83,7 @@ export class GameService {
     @Optional() hpService?: HpService,
     @Optional() checkmateService?: CheckmateService,
     @Optional() private readonly supabase?: SupabaseService,
+    @Optional() private readonly matchRewardService?: MatchRewardService,
   ) {
     this.stateService = stateService || new GameStateService();
     this.chessRuleService = chessRuleService || new ChessRuleService();
@@ -504,13 +507,17 @@ export class GameService {
     reason: GameEndReason | string,
   ): ActiveGameSession {
     const game = this.getGameOrThrow(gameId);
-    if (game.state !== GameState.FINISHED) {
-      if (this.stateService.canTransition(game.state, GameState.FINISHED)) {
-        game.state = this.stateService.transition(game.state, GameState.FINISHED);
-      } else {
-        game.state = GameState.FINISHED;
-      }
+    if (game.state === GameState.ABORTED) {
+      return game;
     }
+    if (game.state === GameState.FINISHED) {
+      this.queuePersistence(game);
+      return game;
+    }
+    if (!this.stateService.canTransition(game.state, GameState.FINISHED)) {
+      throw new BadRequestException(`Cannot finish game in state ${game.state}`);
+    }
+    game.state = this.stateService.transition(game.state, GameState.FINISHED);
     game.winnerId = winnerId;
     game.endReason = reason;
     game.timers.lastTurnStartedAt = null;
@@ -700,6 +707,20 @@ export class GameService {
     await this.persistenceQueue.get(gameId);
   }
 
+  getPlayerRewardResult(gameId: string, playerId: string) {
+    const game = this.getGameOrThrow(gameId);
+    if (playerId !== game.whitePlayerId && playerId !== game.blackPlayerId) {
+      throw new BadRequestException('Player is not in this game');
+    }
+    const result = this.matchRewardResults.get(gameId)?.find(reward => reward.userId === playerId);
+    if (!result) return null;
+    return {
+      status: result.status,
+      currency: result.currencyBalance,
+      experience: result.experienceBalance,
+    };
+  }
+
   serializeGame(game: ActiveGameSession) {
     const { engine, ...rest } = game;
     const fen = this.boardToFen(game);
@@ -760,7 +781,15 @@ export class GameService {
     const previous = this.persistenceQueue.get(game.id) ?? Promise.resolve();
     const pending = previous
       .catch(() => undefined)
-      .then(() => this.supabase!.persistMatch(snapshot));
+      .then(async () => {
+        await this.supabase!.persistMatch(snapshot);
+        if (snapshot.state === GameState.FINISHED && this.matchRewardService) {
+          this.matchRewardResults.set(
+            game.id,
+            await this.matchRewardService.creditFinishedMatch(game.id),
+          );
+        }
+      });
     this.persistenceQueue.set(game.id, pending);
     void pending.catch(error => {
       this.logger.error(`Không lưu được ván ${game.id}: ${error.message}`);

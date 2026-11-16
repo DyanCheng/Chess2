@@ -4,7 +4,7 @@
 
 import React, { useEffect } from 'react';
 import { View, Text, StyleSheet, SafeAreaView, Animated } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import { RouteProp, useNavigation, useRoute } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { COLORS, SPACING, FONT_SIZES, FONT_WEIGHTS, BORDER_RADIUS } from '../../constants/theme';
 import { RootStackParamList } from '../../navigation/types';
@@ -13,10 +13,13 @@ import { GradientButton } from '../../components/common/GradientButton';
 import { formatTime } from '../../utils/formatCurrency';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
+type MatchmakingRoute = RouteProp<RootStackParamList, 'Matchmaking'>;
 
 export const MatchmakingScreen: React.FC = () => {
   const navigation = useNavigation<NavigationProp>();
-  const { matchStatus, searchTime, startSearching, cancelSearch, match, error } = useMatchmaking();
+  const route = useRoute<MatchmakingRoute>();
+  const options = route.params ?? { queueType: 'CASUAL' as const, timeControlId: 'blitz', gameModeCode: 'STANDARD' };
+  const { matchStatus, searchTime, startSearching, cancelSearch, match, error } = useMatchmaking(options);
   const matchFound = !!match;
   
   const pulseAnim = React.useRef(new Animated.Value(1)).current;
@@ -49,7 +52,7 @@ export const MatchmakingScreen: React.FC = () => {
       rotate.stop();
       cancelSearch();
     };
-  }, []);
+  }, [startSearching, cancelSearch, pulseAnim, rotateAnim]);
 
   useEffect(() => {
     if (!match) return;

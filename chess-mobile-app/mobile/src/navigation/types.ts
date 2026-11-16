@@ -6,6 +6,9 @@ import { NavigatorScreenParams } from '@react-navigation/native';
 
 export type MainTabParamList = {
   Home: undefined;
+  Modes: undefined;
+  Puzzle: undefined;
+  Ranking: undefined;
   Shop: undefined;
   Cards: undefined;
   History: undefined;
@@ -24,8 +27,9 @@ export type RootStackParamList = {
   Register: undefined;
   GamePvP: { gameId: string; color: 'w' | 'b'; opponentId: string; playerId: string };
   GamePvE: { botId: string };
-  Matchmaking: undefined;
-  ArcaneModes: undefined;
-  ArcanePuzzle: undefined;
-  ArcaneRanking: undefined;
+  Matchmaking: {
+    queueType: 'RANKED' | 'CASUAL';
+    timeControlId: string;
+    gameModeCode?: string;
+  } | undefined;
 };

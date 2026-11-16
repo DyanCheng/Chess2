@@ -45,7 +45,7 @@ export class GameGateway implements OnGatewayDisconnect {
   }
 
   @SubscribeMessage('game:join')
-  handleJoinGame(
+  async handleJoinGame(
     @ConnectedSocket() client: Socket,
     @MessageBody() payload: { gameId: string },
   ) {
@@ -56,6 +56,8 @@ export class GameGateway implements OnGatewayDisconnect {
     const serialized = this.gameService.serializeGame(session);
     this.server.to(payload.gameId).emit('game:state', serialized);
     this.server.to(payload.gameId).emit('game:updated', serialized);
+    await this.gameService.flushGame(payload.gameId);
+    await this.emitPlayerRewards(payload.gameId);
     return { event: 'game:joined', data: serialized };
   }
 
@@ -66,14 +68,19 @@ export class GameGateway implements OnGatewayDisconnect {
   ) {
     const nested = 'move' in payload ? payload.move : payload;
     const gameId = payload.gameId || nested.gameId;
-    const result = this.gameService.makeMove({
-      ...nested,
-      gameId,
-      playerId: client.data.userId,
-    }, this.server);
-    await this.gameService.flushGame(gameId);
-    this.server.to(gameId).emit('game:updated', result);
-    return { event: 'game:move_ack', data: result };
+    try {
+      const result = this.gameService.makeMove({
+        ...nested,
+        gameId,
+        playerId: client.data.userId,
+      }, this.server);
+      await this.gameService.flushGame(gameId);
+      this.server.to(gameId).emit('game:updated', result);
+      return { event: 'game:move_ack', data: result };
+    } finally {
+      await this.gameService.flushGame(gameId);
+      await this.emitPlayerRewards(gameId);
+    }
   }
 
   @SubscribeMessage('game:bot_move')
@@ -97,6 +104,7 @@ export class GameGateway implements OnGatewayDisconnect {
       this.server,
     );
     await this.gameService.flushGame(payload.gameId);
+    await this.emitPlayerRewards(payload.gameId);
     const serialized = this.gameService.serializeGame(session);
     this.server.to(payload.gameId).emit('game:updated', serialized);
     return {
@@ -106,7 +114,7 @@ export class GameGateway implements OnGatewayDisconnect {
   }
 
   @SubscribeMessage('game:sync_state')
-  handleSyncState(
+  async handleSyncState(
     @ConnectedSocket() client: Socket,
     @MessageBody() payload: { gameId: string },
   ) {
@@ -115,8 +123,25 @@ export class GameGateway implements OnGatewayDisconnect {
       payload.gameId,
       client.data.userId,
     );
+    await this.gameService.flushGame(payload.gameId);
     client.emit('game:state', serialized);
     client.emit('game:updated', serialized);
+    const reward = this.gameService.getPlayerRewardResult(payload.gameId, client.data.userId);
+    if (reward) client.emit('game:reward', reward);
     return { event: 'game:state', data: serialized };
+  }
+
+  private async emitPlayerRewards(gameId: string): Promise<void> {
+    const game = this.gameService.getGame(gameId);
+    if (!game) return;
+    const clients = await this.server.in(gameId).fetchSockets();
+    for (const client of clients) {
+      const playerId = client.data.userId as string | undefined;
+      if (!playerId) continue;
+      const reward = this.gameService.getPlayerRewardResult(gameId, playerId);
+      if (reward) {
+        client.emit('game:reward', reward);
+      }
+    }
   }
 }

@@ -51,7 +51,7 @@ export const SettingsScreen = () => {
       <Text style={styles.title}>Cài Đặt</Text>
       <Text style={styles.settingLabel}>Máy chủ PvP trên cùng mạng Wi-Fi</Text>
       <TextInput style={styles.input} value={serverUrl} onChangeText={setServerUrl}
-        placeholder="http://192.168.1.10:8080" placeholderTextColor={COLORS.textMuted}
+        placeholder="http://192.168.1.10:8082" placeholderTextColor={COLORS.textMuted}
         autoCapitalize="none" autoCorrect={false} keyboardType="url" />
       <GradientButton title="Lưu và kiểm tra kết nối" onPress={saveServer} size="small" />
       <Text style={styles.hint}>{serverStatus}</Text>
