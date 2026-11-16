@@ -4,13 +4,18 @@
     "slug": "arcane-chess",
     "version": "1.0.0",
     "platforms": [
-      "android",
+      "android"
       "web"
     ],
+    "android": {
+      "package": "com.dyancheng.arcanechess",
+      "versionCode": 1
+    },
     "extra": {
       "eas": {
-        "projectId": "0c71e216-7dd0-41c8-b177-d32045c613de"
+        "projectId": "3ce53bd7-3dc0-453f-9690-1ca887e3c5b4"
       }
-    }
+    },
+    "owner": "gungn1r"
   }
 }
