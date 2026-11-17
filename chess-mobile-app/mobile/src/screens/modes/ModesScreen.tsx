@@ -6,7 +6,6 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  TextInput,
   StatusBar,
 } from 'react-native';
 import { COLORS, LIGHT_COLORS } from '../../constants/arcane-colors';
@@ -14,11 +13,19 @@ import { SPACING, FONT_SIZE, FONT_WEIGHT, BORDER_RADIUS, SHADOW } from '../../co
 import { apiService, GameModeDefinition, RankScreenData } from '../../services/api/apiService';
 import { useAuthStore } from '../../store/authStore';
 import { useArcaneThemeStore } from '../../store/arcaneThemeStore';
+import { RoomManagerModal } from '../../components/game/RoomManagerModal';
 
 type MatchmakingNavigationOptions = {
   queueType: 'RANKED' | 'CASUAL';
   timeControlId: string;
   gameModeCode: string;
+};
+
+type RoomGameNavigationOptions = {
+  gameId: string;
+  color: 'w' | 'b';
+  opponentId: string;
+  playerId: string;
 };
 
 // ============================================================
@@ -31,7 +38,7 @@ const ThemeContext = React.createContext<{
   colors: Palette;
   styles: ReturnType<typeof makeStyles>;
   rank: RankScreenData | null;
-  onNavigate?: (id: string, params?: MatchmakingNavigationOptions) => void;
+  onNavigate?: (id: string, params?: MatchmakingNavigationOptions | RoomGameNavigationOptions) => void;
 } | null>(null);
 const useTheme = () => React.useContext(ThemeContext)!;
 
@@ -358,8 +365,10 @@ const VariantsSection = ({
 // PRACTICE & FRIENDS
 // ============================================================
 const PracticeSection = () => {
-  const { styles, colors, onNavigate } = useTheme();
+  const { styles, onNavigate } = useTheme();
   const [bot, setBot] = useState(3);
+  const [roomVisible, setRoomVisible] = useState(false);
+  const isAuthenticated = useAuthStore(state => state.isAuthenticated);
 
   return (
     <View style={styles.section}>
@@ -414,33 +423,27 @@ const PracticeSection = () => {
 
         <View style={styles.lobbyRow}>
           <TouchableOpacity
-            style={[styles.createBtn, styles.disabledButton]}
-            disabled
-            accessibilityState={{ disabled: true }}
+            style={styles.createBtn}
+            onPress={() => isAuthenticated ? setRoomVisible(true) : onNavigate?.('login')}
           >
-            <Text style={styles.createBtnText}>Phòng tùy chỉnh sắp ra mắt</Text>
+            <Text style={styles.createBtnText}>{isAuthenticated ? 'Mở danh sách phòng' : 'Đăng nhập để vào phòng'}</Text>
           </TouchableOpacity>
-          <View style={styles.pinBox}>
-            <TextInput
-              style={styles.pinInput}
-              placeholder="Mã PIN (sắp ra mắt)"
-              placeholderTextColor={colors.textMuted}
-              keyboardType="number-pad"
-              maxLength={6}
-              editable={false}
-            />
-            <TouchableOpacity style={[styles.pinBtn, styles.disabledButton]} disabled>
-              <Text style={styles.pinBtnText}>Vào</Text>
-            </TouchableOpacity>
-          </View>
         </View>
 
         <View style={styles.spectatorRow}>
           <Text style={styles.spectatorText}>
-            Chế độ khán giả sẽ khả dụng khi phòng tùy chỉnh được triển khai.
+            Tạo phòng 5 phút hoặc nhập mã 6 ký tự để đấu cùng bạn bè.
           </Text>
         </View>
       </View>
+      <RoomManagerModal
+        visible={roomVisible}
+        onClose={() => setRoomVisible(false)}
+        onGameStart={params => {
+          setRoomVisible(false);
+          onNavigate?.('room-game', params);
+        }}
+      />
     </View>
   );
 };
@@ -451,7 +454,7 @@ const PracticeSection = () => {
 const ModesScreen = ({
   onNavigate,
 }: {
-  onNavigate?: (id: string, params?: MatchmakingNavigationOptions) => void;
+  onNavigate?: (id: string, params?: MatchmakingNavigationOptions | RoomGameNavigationOptions) => void;
 }) => {
   const isDark = useArcaneThemeStore(state => state.isDark);
   const toggleTheme = useArcaneThemeStore(state => state.toggleTheme);

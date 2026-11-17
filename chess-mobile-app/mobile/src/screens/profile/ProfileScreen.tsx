@@ -1,17 +1,59 @@
-import React from 'react';
-import { View, Text, StyleSheet, SafeAreaView, ScrollView, TouchableOpacity } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import React, { useCallback, useState } from 'react';
+import { View, Text, StyleSheet, SafeAreaView, ScrollView, RefreshControl } from 'react-native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { COLORS, SPACING, BORDER_RADIUS, FONT_SIZES, FONT_WEIGHTS } from '../../constants/theme';
 import { usePlayerStore } from '../../store/playerStore';
 import { PlayerAvatar } from '../../components/common/PlayerAvatar';
 import { GradientButton } from '../../components/common/GradientButton';
 import { useAuthStore } from '../../store/authStore';
+import { apiService } from '../../services/api/apiService';
 
 export const ProfileScreen = () => {
   const navigation = useNavigation<NativeStackNavigationProp<any>>();
-  const { profile, stats } = usePlayerStore();
+  const { profile, stats, setProfile, setStats } = usePlayerStore();
   const { isAuthenticated, username, email, logout, exitGuestMode } = useAuthStore();
+  const [refreshing, setRefreshing] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  const loadProfile = useCallback(async () => {
+    if (!isAuthenticated) return;
+    setRefreshing(true);
+    setLoadError(null);
+    const [profileResponse, statsResponse] = await Promise.all([
+      apiService.getProfile(),
+      apiService.getStats(),
+    ]);
+    if (profileResponse.data && statsResponse.data) {
+      const remote = profileResponse.data;
+      setProfile({
+        id: remote.id,
+        username: remote.username,
+        avatarUrl: remote.avatarUrl,
+        level: remote.level,
+        experience: remote.experience,
+        experienceToNextLevel: Math.max(100, remote.level * 1000),
+        rating: remote.rating,
+        gold: remote.gold,
+        gems: remote.gems,
+        maxHP: 100,
+        currentHP: 100,
+        wins: remote.wins,
+        losses: remote.losses,
+        draws: remote.draws,
+        createdAt: remote.createdAt,
+        lastOnline: remote.updatedAt,
+      });
+      setStats(statsResponse.data);
+    } else {
+      setLoadError(profileResponse.error || statsResponse.error || 'Không tải được hồ sơ');
+    }
+    setRefreshing(false);
+  }, [isAuthenticated, setProfile, setStats]);
+
+  useFocusEffect(useCallback(() => {
+    void loadProfile();
+  }, [loadProfile]));
 
   if (!profile) {
     return (
@@ -24,7 +66,16 @@ export const ProfileScreen = () => {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <ScrollView contentContainerStyle={styles.container}>
+      <ScrollView
+        contentContainerStyle={styles.container}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => void loadProfile()} />}
+      >
+        {!!loadError && (
+          <View style={styles.errorBox}>
+            <Text style={styles.errorText}>{loadError}</Text>
+            <Text style={styles.retryText} onPress={() => void loadProfile()}>Thử lại</Text>
+          </View>
+        )}
         <View style={styles.header}>
           <PlayerAvatar 
             username={profile.username} 
@@ -191,4 +242,12 @@ const styles = StyleSheet.create({
   actionBtn: {
     marginBottom: SPACING.sm,
   },
+  errorBox: {
+    backgroundColor: 'rgba(244, 67, 54, 0.12)',
+    borderRadius: BORDER_RADIUS.md,
+    padding: SPACING.md,
+    marginBottom: SPACING.md,
+  },
+  errorText: { color: COLORS.textPrimary },
+  retryText: { color: COLORS.primary, marginTop: SPACING.xs, fontWeight: FONT_WEIGHTS.bold },
 });

@@ -37,9 +37,9 @@ const navigateArcane = (
   navigation: NavigationProp<RootStackParamList>,
   target: string,
   params?: {
-    queueType: 'RANKED' | 'CASUAL';
-    timeControlId: string;
-    gameModeCode?: string;
+    queueType: 'RANKED' | 'CASUAL'; timeControlId: string; gameModeCode?: string;
+  } | {
+    gameId: string; color: 'w' | 'b'; opponentId: string; playerId: string;
   },
 ) => {
   switch (target) {
@@ -73,11 +73,16 @@ const navigateArcane = (
         );
         break;
       }
-      navigation.navigate('Matchmaking', params ?? {
+      navigation.navigate('Matchmaking', 'queueType' in (params ?? {}) ? params as {
+        queueType: 'RANKED' | 'CASUAL'; timeControlId: string; gameModeCode?: string;
+      } : {
         queueType: 'CASUAL',
         timeControlId: 'blitz',
         gameModeCode: 'STANDARD',
       });
+      break;
+    case 'room-game':
+      if (params && 'gameId' in params) navigation.navigate('GamePvP', params);
       break;
     case 'bot':
       navigation.navigate('GamePvE', { botId: BOT_LEVELS[0].id });

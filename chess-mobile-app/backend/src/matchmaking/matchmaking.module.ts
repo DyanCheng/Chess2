@@ -5,9 +5,10 @@ import { MatchmakingService } from './matchmaking.service';
 import { MatchmakingGateway } from './matchmaking.gateway';
 import { GameModule } from '../game/game.module';
 import { AuthModule } from '../auth/auth.module';
+import { PresenceModule } from '../presence/presence.module';
 
 @Module({
-  imports: [GameModule, AuthModule],
+  imports: [GameModule, AuthModule, PresenceModule],
   providers: [MatchmakingQueue, MatchmakingService, MatchmakingGateway],
   exports: [MatchmakingService, MatchmakingQueue],
 })
