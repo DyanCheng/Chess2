@@ -6,6 +6,7 @@ import { Chess } from 'chess.js';
 import { Socket } from 'socket.io-client';
 import { ChessBoard } from '../../components/chess/ChessBoard';
 import { CardHand } from '../../components/cards/CardHand';
+import { GameOverModal } from '../../components/game/GameOverModal';
 import { SKILL_CARD_BY_ID } from '../../constants/skillCards';
 import { COLORS, SPACING } from '../../constants/theme';
 import { RootStackParamList } from '../../navigation/types';
@@ -469,6 +470,16 @@ export const OnlineGameScreen: React.FC = () => {
     ]);
   };
 
+  const playAnotherMatch = () => {
+    navigation.replace('Matchmaking', {
+      queueType: game?.ranked ? 'RANKED' : 'CASUAL',
+      timeControlId: game?.modeConfig?.timeControlId || 'BLITZ_5',
+      gameModeCode: game?.gameModeCode || undefined,
+    });
+  };
+
+  const goHome = () => navigation.navigate('MainTabs', { screen: 'Home' });
+
   const statusText = !game
     ? 'Đang kết nối với đối thủ...'
     : isFinished
@@ -630,6 +641,25 @@ export const OnlineGameScreen: React.FC = () => {
           )}
         </View>
       </View>
+
+      <GameOverModal
+        visible={game?.state === 'FINISHED'}
+        winner={game?.winner === 'draw'
+          ? 'draw'
+          : game?.winner === 'w'
+            ? 'white'
+            : game?.winner === 'b'
+              ? 'black'
+              : null}
+        reason={game?.endReason || ''}
+        playerColor={color === 'w' ? 'white' : 'black'}
+        goldEarned={reward?.status === 'failed' ? 0 : reward?.currency ?? 0}
+        xpEarned={reward?.status === 'failed' ? 0 : reward?.experience ?? 0}
+        matchId={gameId}
+        playAgainLabel="Đấu trận mới"
+        onPlayAgain={playAnotherMatch}
+        onGoHome={goHome}
+      />
     </SafeAreaView>
   );
 };

@@ -275,6 +275,7 @@ export const GameScreen: React.FC = () => {
         goldEarned={gameResult?.winner === playerColor ? botInfo?.reward.gold || 0 : 0}
         xpEarned={gameResult?.winner === playerColor ? botInfo?.reward.experience || 0 : 0}
         ratingChange={0}
+        matchId={gameId || undefined}
         onPlayAgain={handlePlayAgain}
         onGoHome={handleGoHome}
       />
