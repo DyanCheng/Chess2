@@ -134,6 +134,252 @@ export class SupabaseService {
     return data ?? [];
   }
 
+  async getMatchForPlayer(playerId: string, matchId: string) {
+    const client = this.adminClient();
+    const { data: membership, error: membershipError } = await client
+      .from('match_players')
+      .select('match_id')
+      .eq('match_id', matchId)
+      .eq('user_id', playerId)
+      .maybeSingle();
+    if (membershipError) {
+      throw new Error(`Supabase match membership select: ${membershipError.message}`);
+    }
+    if (!membership) return null;
+
+    const { data, error } = await client
+      .from('matches')
+      .select('id,status,winner_id,created_at,started_at,updated_at,ended_at,end_reason,fen,white_time_ms,black_time_ms,match_players(user_id,color,current_hp),match_moves(move_number,player_id,from_square,to_square,piece,captured_piece,special_effect,timestamp)')
+      .eq('id', matchId)
+      .single();
+    if (error) throw new Error(`Supabase match detail select: ${error.message}`);
+    return data;
+  }
+
+  async getPlayerProfile(userId: string) {
+    const client = this.adminClient();
+    const [{ data: profile, error: profileError }, { data: wallet, error: walletError }] = await Promise.all([
+      client.from('profiles')
+        .select('id,username,display_name,avatar_url,level,experience,created_at,updated_at')
+        .eq('id', userId)
+        .single(),
+      client.from('wallets')
+        .select('currency,gems,updated_at')
+        .eq('user_id', userId)
+        .maybeSingle(),
+    ]);
+    if (profileError) throw new Error(`Supabase profile select: ${profileError.message}`);
+    if (walletError) throw new Error(`Supabase wallet select: ${walletError.message}`);
+    return { profile, wallet };
+  }
+
+  async getPlayerMatchStats(userId: string) {
+    const client = this.adminClient();
+    const { data: memberships, error: membershipsError } = await client
+      .from('match_players')
+      .select('match_id')
+      .eq('user_id', userId);
+    if (membershipsError) throw new Error(`Supabase player matches select: ${membershipsError.message}`);
+    const matchIds = (memberships ?? []).map(row => row.match_id);
+    if (!matchIds.length) return [];
+    const { data, error } = await client
+      .from('matches')
+      .select('id,status,winner_id,started_at,ended_at,created_at')
+      .in('id', matchIds)
+      .in('status', ['FINISHED', 'DRAW'])
+      .order('ended_at', { ascending: false });
+    if (error) throw new Error(`Supabase player stats select: ${error.message}`);
+    return data ?? [];
+  }
+
+  async getPlayerRating(userId: string) {
+    const { data, error } = await this.adminClient()
+      .from('user_ranks')
+      .select('rank_points')
+      .eq('user_id', userId)
+      .order('rank_points', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (error) throw new Error(`Supabase player rating select: ${error.message}`);
+    return Number(data?.rank_points ?? 1000);
+  }
+
+  async getLeaderboard(limit: number) {
+    const client = this.adminClient();
+    const { data: mode } = await client
+      .from('game_modes').select('id').eq('code', 'STANDARD').maybeSingle();
+    const { data: season } = await client
+      .from('rank_seasons').select('id').eq('is_active', true)
+      .order('start_at', { ascending: false }).limit(1).maybeSingle();
+
+    let ranksQuery = client.from('user_ranks')
+      .select('user_id,rank_points,wins,losses,draws')
+      .order('rank_points', { ascending: false })
+      .limit(limit);
+    if (mode?.id) ranksQuery = ranksQuery.eq('game_mode_id', mode.id);
+    if (season?.id) ranksQuery = ranksQuery.eq('season_id', season.id);
+    const { data: ranks, error: ranksError } = await ranksQuery;
+    if (ranksError) throw new Error(`Supabase leaderboard select: ${ranksError.message}`);
+    const userIds = (ranks ?? []).map(row => row.user_id);
+    if (!userIds.length) return [];
+
+    const { data: profiles, error: profilesError } = await client
+      .from('profiles')
+      .select('id,username,display_name,avatar_url,level,experience,created_at,updated_at')
+      .in('id', userIds);
+    if (profilesError) throw new Error(`Supabase leaderboard profiles select: ${profilesError.message}`);
+    const profileById = new Map((profiles ?? []).map(profile => [profile.id, profile]));
+    return (ranks ?? []).map((rank, index) => ({
+      rank: index + 1,
+      rankPoints: Number(rank.rank_points),
+      wins: Number(rank.wins),
+      losses: Number(rank.losses),
+      draws: Number(rank.draws),
+      profile: profileById.get(rank.user_id) ?? null,
+    }));
+  }
+
+  async listFunctionCards() {
+    const { data, error } = await this.adminClient()
+      .from('function_cards')
+      .select('id,name,description,effect_type,effect_value,price,is_active')
+      .eq('is_active', true)
+      .order('created_at', { ascending: true });
+    if (error) throw new Error(`Supabase function cards select: ${error.message}`);
+    return (data ?? []).map(card => ({
+      id: card.id,
+      name: card.name,
+      description: card.description ?? '',
+      effectType: String(card.effect_type),
+      value: Number(card.effect_value),
+      price: Number(card.price),
+      quantity: 0,
+    }));
+  }
+
+  async listOwnedCards(userId: string) {
+    const client = this.adminClient();
+    const { data: inventory, error: inventoryError } = await client
+      .from('user_cards')
+      .select('card_id,quantity')
+      .eq('user_id', userId)
+      .gt('quantity', 0);
+    if (inventoryError) throw new Error(`Supabase card inventory select: ${inventoryError.message}`);
+    const cardIds = (inventory ?? []).map(item => item.card_id);
+    if (!cardIds.length) return [];
+    const { data: definitions, error: definitionsError } = await client
+      .from('function_cards')
+      .select('id,name,description,effect_type,effect_value,price,is_active')
+      .in('id', cardIds)
+      .eq('is_active', true);
+    if (definitionsError) throw new Error(`Supabase owned card definitions select: ${definitionsError.message}`);
+    const quantityById = new Map((inventory ?? []).map(item => [item.card_id, Number(item.quantity)]));
+    return (definitions ?? []).map(card => ({
+      id: card.id,
+      name: card.name,
+      description: card.description ?? '',
+      effectType: String(card.effect_type),
+      value: Number(card.effect_value),
+      price: Number(card.price),
+      quantity: quantityById.get(card.id) ?? 0,
+    }));
+  }
+
+  async insertSecurityLog(input: {
+    action: string;
+    ipAddress?: string;
+    userAgent?: string;
+    metadata?: Record<string, unknown>;
+  }) {
+    const { error } = await this.adminClient().from('security_logs').insert({
+      user_id: null,
+      action: input.action.slice(0, 100),
+      ip_address: input.ipAddress || null,
+      user_agent: input.userAgent || null,
+      metadata: input.metadata ?? {},
+    });
+    if (error) throw new Error(`Supabase security log insert: ${error.message}`);
+  }
+
+  async getModeCatalog() {
+    const client = this.adminClient();
+    const [{ data: modes, error: modesError }, { data: season, error: seasonError }] = await Promise.all([
+      client.from('game_modes')
+        .select('id,code,name,description,rules,sort_order')
+        .eq('is_active', true)
+        .order('sort_order', { ascending: true }),
+      client.from('rank_seasons')
+        .select('id,name,start_at,end_at')
+        .eq('is_active', true)
+        .order('start_at', { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+    ]);
+    if (modesError) throw new Error(`Supabase game modes select: ${modesError.message}`);
+    if (seasonError) throw new Error(`Supabase rank season select: ${seasonError.message}`);
+    return { modes: modes ?? [], season };
+  }
+
+  async getUserRank(userId: string) {
+    const client = this.adminClient();
+    const catalog = await this.getModeCatalog();
+    const standardMode = catalog.modes.find(mode => mode.code === 'STANDARD') ?? catalog.modes[0];
+    if (!catalog.season || !standardMode) return null;
+    const { data: rank, error: rankError } = await client.from('user_ranks')
+      .select('id,rank_points,wins,losses,draws,updated_at,rank_tier_id')
+      .eq('user_id', userId)
+      .eq('season_id', catalog.season.id)
+      .eq('game_mode_id', standardMode.id)
+      .maybeSingle();
+    if (rankError) throw new Error(`Supabase user rank select: ${rankError.message}`);
+    const tierId = rank?.rank_tier_id;
+    const tierQuery = tierId
+      ? client.from('rank_tiers').select('id,code,name,min_points,tier_order').eq('id', tierId).single()
+      : client.from('rank_tiers').select('id,code,name,min_points,tier_order').order('tier_order').limit(1).single();
+    const { data: tier, error: tierError } = await tierQuery;
+    if (tierError) throw new Error(`Supabase rank tier select: ${tierError.message}`);
+    let history: Array<{
+      id: string;
+      match_id: string | null;
+      points_before: number;
+      points_change: number;
+      points_after: number;
+      created_at: string;
+    }> = [];
+    if (rank?.id) {
+      const { data, error } = await client.from('rank_history')
+        .select('id,match_id,points_before,points_change,points_after,created_at')
+        .eq('user_rank_id', rank.id)
+        .order('created_at', { ascending: false })
+        .limit(20);
+      if (error) throw new Error(`Supabase rank history select: ${error.message}`);
+      history = data ?? [];
+    }
+    return { season: catalog.season, rank, tier, history };
+  }
+
+  async getPuzzleProgress(userId: string) {
+    const { data, error } = await this.adminClient().rpc('get_user_puzzle_progress', { p_user_id: userId });
+    if (error) throw new Error(`Supabase puzzle progress: ${error.message}`);
+    return data;
+  }
+
+  async recordPuzzleCompletion(input: {
+    userId: string;
+    puzzleId: string;
+    requiredPreviousId: string | null;
+    dailyChallenge: boolean;
+  }) {
+    const { data, error } = await this.adminClient().rpc('record_puzzle_completion', {
+      p_user_id: input.userId,
+      p_puzzle_id: input.puzzleId,
+      p_required_previous_id: input.requiredPreviousId,
+      p_daily_challenge: input.dailyChallenge,
+    });
+    if (error) throw new Error(`Supabase puzzle completion: ${error.message}`);
+    return data;
+  }
+
   async getWallet(userId: string) {
     const { data, error } = await this.adminClient()
       .from('wallets')

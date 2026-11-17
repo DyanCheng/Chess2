@@ -19,10 +19,44 @@ export interface AuthSessionResponse {
 
 export interface PlayerProfileResponse {
   id: string;
-  email: string;
+  email: string | null;
   username: string;
-  created_at: string;
-  updated_at: string;
+  avatarUrl: string;
+  level: number;
+  experience: number;
+  rating: number;
+  gold: number;
+  gems: number;
+  wins: number;
+  losses: number;
+  draws: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PlayerStatsResponse {
+  totalGames: number;
+  wins: number;
+  losses: number;
+  draws: number;
+  winRate: number;
+  rating: number;
+  avgGameDuration: number;
+  currentWinStreak: number;
+  longestWinStreak: number;
+  favoriteOpening: string;
+  totalCardsUsed: number;
+  totalPiecesCaptured: number;
+}
+
+export interface ServerCard {
+  id: string;
+  name: string;
+  description: string;
+  effectType: string;
+  value: number;
+  price: number;
+  quantity: number;
 }
 
 export interface GameModeDefinition {
@@ -234,7 +268,7 @@ class ApiService {
   }
 
   async getStats() {
-    return this.request('GET', '/player/stats');
+    return this.request<PlayerStatsResponse>('GET', '/player/stats');
   }
 
   async getLeaderboard(limit: number = 50) {
@@ -271,7 +305,11 @@ class ApiService {
   }
 
   async getGameDetails(gameId: string) {
-    return this.request('GET', `/game/${gameId}`);
+    return this.request('GET', `/matches/${gameId}`);
+  }
+
+  async getMatchReplay(gameId: string) {
+    return this.request('GET', `/matches/${gameId}/replay`);
   }
 
   // Shop endpoints
@@ -301,11 +339,11 @@ class ApiService {
 
   // Card endpoints
   async getOwnedCards() {
-    return this.request('GET', '/cards/owned');
+    return this.request<{ cards: ServerCard[] }>('GET', '/cards/owned');
   }
 
   async getAllCards() {
-    return this.request('GET', '/cards/all');
+    return this.request<{ cards: ServerCard[] }>('GET', '/cards/all');
   }
 }
 

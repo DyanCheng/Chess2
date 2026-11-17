@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, FlatList } from 'react-native';
+import React, { useCallback, useEffect, useState } from 'react';
+import { View, Text, StyleSheet, FlatList, RefreshControl } from 'react-native';
 import { COLORS } from '../../constants/theme';
 import { useHistoryStore } from '../../store/historyStore';
 import { formatDate } from '../../utils/formatCurrency';
@@ -15,21 +15,30 @@ export const HistoryScreen = () => {
     match_players: Array<{ user_id: string; color: 'WHITE' | 'BLACK' }>;
   }>>([]);
   const [onlineStatus, setOnlineStatus] = useState('');
-  const loadOnline = async () => {
+  const [isLoading, setIsLoading] = useState(false);
+  const loadOnline = useCallback(async () => {
+    if (!isAuthenticated) return;
+    setIsLoading(true);
     setOnlineStatus('Đang tải lịch sử Supabase...');
     const response = await apiService.getGameHistory();
     if (response.error || !response.data) {
       setOnlineStatus(response.error || 'Không tải được lịch sử online');
+      setIsLoading(false);
       return;
     }
     setOnlineGames(response.data.matches);
     setOnlineStatus(response.data.matches.length ? '' : 'Chưa có ván online được lưu.');
-  };
+    setIsLoading(false);
+  }, [isAuthenticated]);
+
+  useEffect(() => {
+    void loadOnline();
+  }, [loadOnline]);
   return (
     <View style={styles.container}>
       <Text style={styles.title}>Lịch Sử Trận Đấu</Text>
-      {isAuthenticated && <GradientButton title="Tải lịch sử online" onPress={() => { void loadOnline(); }} size="small" />}
-      {!!onlineStatus && <Text style={styles.date}>{onlineStatus}</Text>}
+      {isAuthenticated && <GradientButton title="Làm mới lịch sử online" onPress={() => { void loadOnline(); }} size="small" />}
+      {!!onlineStatus && <Text style={styles.date} onPress={() => void loadOnline()}>{onlineStatus}</Text>}
       {onlineGames.map(game => (
         <View key={game.id} style={styles.historyItem}>
           <View>
@@ -43,6 +52,7 @@ export const HistoryScreen = () => {
       ))}
       <FlatList
         data={entries}
+        refreshControl={<RefreshControl refreshing={isLoading} onRefresh={() => void loadOnline()} />}
         ListEmptyComponent={<Text style={styles.date}>Chưa có trận nào. Hãy chơi với bot để bắt đầu.</Text>}
         keyExtractor={item => item.id}
         renderItem={({ item }) => (

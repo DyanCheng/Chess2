@@ -61,6 +61,14 @@ export const useCardStore = create<CardStore>()((set, get) => ({
       SHIELD: 'shield',
       EXTRA_MOVE: 'extra_move',
       FREEZE_PIECE: 'freeze',
+      RESURRECT: 'resurrect',
+      SWAP: 'swap',
+      REVEAL: 'reveal',
+      TIME_BONUS: 'time_bonus',
+      POISON: 'poison',
+      MIRROR: 'mirror',
+      TELEPORT: 'teleport',
+      FORTIFY: 'fortify',
     } as const;
     const effectType = effectTypes[serverCard.effectType as keyof typeof effectTypes];
     if (!effectType) throw new Error(`Unsupported server card effect: ${serverCard.effectType}`);

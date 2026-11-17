@@ -2,16 +2,40 @@
 // CardsScreen - Deck management and collection
 // ============================================================
 
-import React, { useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, SafeAreaView, TouchableOpacity } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import { COLORS, SPACING, FONT_SIZES, FONT_WEIGHTS, BORDER_RADIUS } from '../../constants/theme';
 import { useCardStore } from '../../store/cardStore';
 import { CardDetail } from '../../components/cards/CardDetail';
 import { RARITY_CONFIG } from '../../constants/cards';
+import { apiService } from '../../services/api/apiService';
+import { useAuthStore } from '../../store/authStore';
 
 export const CardsScreen: React.FC = () => {
-  const { ownedCards, allCards } = useCardStore();
+  const { ownedCards, allCards, syncServerCard } = useCardStore();
+  const isAuthenticated = useAuthStore(state => state.isAuthenticated);
   const [selectedCard, setSelectedCard] = useState<any>(null);
+  const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  const loadCards = useCallback(async () => {
+    if (!isAuthenticated) return;
+    setLoading(true);
+    setLoadError(null);
+    const [catalog, owned] = await Promise.all([apiService.getAllCards(), apiService.getOwnedCards()]);
+    if (!catalog.data || !owned.data) {
+      setLoadError(catalog.error || owned.error || 'Không tải được bộ sưu tập thẻ');
+    } else {
+      catalog.data.cards.forEach(card => syncServerCard({ ...card, quantity: 0 }));
+      owned.data.cards.forEach(card => syncServerCard(card));
+    }
+    setLoading(false);
+  }, [isAuthenticated, syncServerCard]);
+
+  useFocusEffect(useCallback(() => {
+    void loadCards();
+  }, [loadCards]));
 
   // Group by rarity for collection view
   const groupedCards = allCards.reduce((acc, card) => {
@@ -39,6 +63,12 @@ export const CardsScreen: React.FC = () => {
       </View>
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+        {loading && <Text style={styles.statusText}>Đang đồng bộ bộ sưu tập...</Text>}
+        {!!loadError && (
+          <TouchableOpacity style={styles.errorBox} onPress={() => void loadCards()}>
+            <Text style={styles.statusText}>{loadError} · Chạm để thử lại</Text>
+          </TouchableOpacity>
+        )}
         {/* Selected Deck Section (Preview) */}
         <View style={styles.deckSection}>
           <Text style={styles.sectionTitle}>Bộ Bài Trang Bị (Tối đa 3 loại)</Text>
@@ -205,6 +235,8 @@ const styles = StyleSheet.create({
     padding: SPACING.lg,
     paddingBottom: SPACING.xxxl,
   },
+  statusText: { color: COLORS.textSecondary, textAlign: 'center', padding: SPACING.md },
+  errorBox: { backgroundColor: 'rgba(244,67,54,0.12)', margin: SPACING.md, borderRadius: BORDER_RADIUS.md },
   rarityGroup: {
     marginBottom: SPACING.xl,
   },

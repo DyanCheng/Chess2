@@ -7,14 +7,16 @@ import {
   ConnectedSocket,
   OnGatewayDisconnect,
   OnGatewayInit,
+  OnGatewayConnection,
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
 import { MatchmakingService } from './matchmaking.service';
 import { GameService } from '../game/game.service';
 import { AuthService } from '../auth/auth.service';
+import { PresenceService } from '../presence/presence.service';
 
 @WebSocketGateway({ cors: { origin: '*' } })
-export class MatchmakingGateway implements OnGatewayDisconnect, OnGatewayInit {
+export class MatchmakingGateway implements OnGatewayConnection, OnGatewayDisconnect, OnGatewayInit {
   @WebSocketServer()
   server!: Server;
 
@@ -22,6 +24,7 @@ export class MatchmakingGateway implements OnGatewayDisconnect, OnGatewayInit {
     private readonly matchmakingService: MatchmakingService,
     private readonly gameService: GameService,
     private readonly auth: AuthService,
+    private readonly presence: PresenceService,
   ) {}
 
   afterInit(server: Server) {
@@ -31,11 +34,16 @@ export class MatchmakingGateway implements OnGatewayDisconnect, OnGatewayInit {
         if (typeof token !== 'string' || !token) throw new Error('Thiếu token');
         const user = await this.auth.getUser(token);
         client.data.userId = user.id;
+        client.data.username = user.user_metadata?.username || user.email?.split('@')[0] || 'Kỳ thủ';
         next();
       } catch {
         next(new Error('Cần đăng nhập để chơi PvP'));
       }
     });
+  }
+
+  handleConnection(client: Socket) {
+    this.presence.connect(client, client.data.userId, client.data.username, this.server);
   }
 
   @SubscribeMessage('matchmaking:join')
@@ -82,5 +90,6 @@ export class MatchmakingGateway implements OnGatewayDisconnect, OnGatewayInit {
 
   handleDisconnect(client: Socket) {
     this.matchmakingService.handleSocketDisconnect(client.id);
+    this.presence.disconnect(client.id, this.server);
   }
 }

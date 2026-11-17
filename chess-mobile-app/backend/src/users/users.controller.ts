@@ -1,18 +1,35 @@
-import { Body, Controller, Get, Headers, Put } from '@nestjs/common';
+import { Body, Controller, Get, Headers, Put, Query } from '@nestjs/common';
 import { AuthService } from '../auth/auth.service';
 import { accessTokenFromHeader } from '../auth/token';
+import { UsersService } from './users.service';
 
 @Controller('player')
 export class UsersController {
-  constructor(private readonly auth: AuthService) {}
+  constructor(private readonly auth: AuthService, private readonly users: UsersService) {}
 
   @Get('profile')
-  profile(@Headers('authorization') authorization?: string) {
-    return this.auth.getProfile(accessTokenFromHeader(authorization));
+  async profile(@Headers('authorization') authorization?: string) {
+    const user = await this.auth.getUser(accessTokenFromHeader(authorization));
+    return this.users.getProfile(user.id, user.email);
   }
 
   @Put('profile')
-  updateProfile(@Headers('authorization') authorization: string, @Body() body: { username: string }) {
-    return this.auth.updateProfile(accessTokenFromHeader(authorization), body?.username);
+  async updateProfile(@Headers('authorization') authorization: string, @Body() body: { username: string }) {
+    const token = accessTokenFromHeader(authorization);
+    await this.auth.updateProfile(token, body?.username);
+    const user = await this.auth.getUser(token);
+    return this.users.getProfile(user.id, user.email);
+  }
+
+  @Get('stats')
+  async stats(@Headers('authorization') authorization?: string) {
+    const user = await this.auth.getUser(accessTokenFromHeader(authorization));
+    return this.users.getStats(user.id);
+  }
+
+  @Get('leaderboard')
+  leaderboard(@Query('limit') rawLimit?: string) {
+    const limit = Math.min(100, Math.max(1, Number.parseInt(rawLimit || '50', 10) || 50));
+    return this.users.getLeaderboard(limit);
   }
 }
